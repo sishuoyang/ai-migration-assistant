@@ -1,7 +1,7 @@
 .PHONY: setup up down reset health logs pull diagram
 
 setup:
-	@echo "Setting up AI Migration Playground..."
+	@echo "Setting up AI Migration Assistant..."
 	@if [ ! -f "agent-skills/skills/clickhouse-best-practices/AGENTS.md" ]; then \
 		echo "Cloning agent-skills from GitHub..."; \
 		rm -rf agent-skills && git clone https://github.com/ClickHouse/agent-skills.git agent-skills; \

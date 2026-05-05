@@ -1,4 +1,4 @@
-# AI Migration Playground
+# AI Migration Assistant
 
 A self-contained Docker Compose environment for hands-on AI-assisted database migration to ClickHouse Cloud. Partners use a chat interface backed by real MCP database connections to work through schema analysis, data migration, query rewriting, and performance optimisation — all with AI guidance.
 

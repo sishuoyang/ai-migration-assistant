@@ -1,6 +1,6 @@
 # Adding a Migration Source
 
-This guide explains how to add a new source database to the AI Migration Playground. The source can be a **local container** (PostgreSQL, ClickHouse OSS, MySQL) or a **cloud service** (Snowflake, BigQuery, Redshift, AlloyDB) — the playground supports both. After following this guide you will have a fully working migration scenario: an accessible source database, an MCP server the agent can talk to, a source-specific system prompt, and a step-by-step migration guide.
+This guide explains how to add a new source database to the AI Migration Assistant. The source can be a **local container** (PostgreSQL, ClickHouse OSS, MySQL) or a **cloud service** (Snowflake, BigQuery, Redshift, AlloyDB) — the playground supports both. After following this guide you will have a fully working migration scenario: an accessible source database, an MCP server the agent can talk to, a source-specific system prompt, and a step-by-step migration guide.
 
 ---
 
