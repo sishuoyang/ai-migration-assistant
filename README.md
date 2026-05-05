@@ -51,7 +51,7 @@ The below components are part of the **ClickHouse Cloud**
 ## Quick Start
 
 ```bash
-git clone https://github.com/ClickHouse/ai-migration-assistant.git
+git clone https://github.com/sishuoyang/ai-migration-assistant
 cd ai-migration-assistant
 make setup          # initialises submodules, injects agent skills, creates .env
 ```

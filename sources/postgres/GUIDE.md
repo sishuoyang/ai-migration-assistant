@@ -23,7 +23,7 @@ This is a one-time step per service. See the [official docs](https://clickhouse.
 ### Step 2: Clone and configure
 
 ```bash
-git clone https://github.com/ClickHouse/ai-migration-assistant.git
+git clone https://github.com/sishuoyang/ai-migration-assistant
 cd ai-migration-assistant
 make setup
 ```
