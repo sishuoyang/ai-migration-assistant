@@ -63,7 +63,7 @@ ANTHROPIC_API_KEY=sk-ant-...        # or OPENAI_API_KEY=sk-...
 make up
 ```
 
-Open **http://localhost:3080** in your browser.
+Open **https://localhost** in your browser (accept the self-signed certificate warning).
 
 > **First run:** Both databases seed on startup — allow 5–10 minutes total.
 > - PostgreSQL generates ~10M rows (`DATASET_SIZE=medium`): `docker compose logs postgres -f`
@@ -81,11 +81,11 @@ Open **http://localhost:3080** in your browser.
 | ClickHouse OSS host (local) | `localhost:8123` |
 | ClickHouse OSS user / password | `default` / *(empty)* |
 | ClickHouse OSS database | `analytics` |
-| ClickHouse Cloud | OAuth via browser — no local password needed |
+| ClickHouse Cloud | credentials from `.env` (`CLICKHOUSE_CLOUD_HOST/USER/PASSWORD`) |
 
 ## Using the playground
 
-1. Sign in at **http://localhost:3080** with `admin@playground.local` / `playground`
+1. Sign in at **https://localhost** with `admin@playground.local` / `playground`
 2. **Select a model** from the dropdown in the top bar — choose Claude, Gemini, or GPT-4. The agent will not respond correctly until a model is explicitly selected.
 3. **Enable MCP servers** by clicking the MCP icon in the chat toolbar. This step is required — the agent's migration knowledge (system prompt) is only injected when the MCP servers are active. Enable the servers for your chosen migration source:
 
@@ -191,16 +191,8 @@ Set `DATASET_SIZE=small` in `.env`, run `make reset`.
 **Out of memory during seed:**
 Increase Docker Desktop memory to 8+ GB (Docker Desktop → Settings → Resources).
 
-**ClickHouse Cloud MCP OAuth fails with "No route matches URL /oauth/undefined/login":**
-`DOMAIN_CLIENT` and `DOMAIN_SERVER` are not set. LibreChat needs these to build the OAuth callback URL. Add them to `.env`:
-```
-DOMAIN_CLIENT=http://<your-host>:3080
-DOMAIN_SERVER=http://<your-host>:3080
-```
-Use `http://localhost:3080` for local installs, or your server's public IP/hostname for remote deployments. Then restart: `docker compose restart librechat`.
-
-**ClickHouse Cloud MCP not connecting / OAuth not working:**
-Ensure the remote MCP server is enabled for your service: ClickHouse Cloud console → service → **Connect** → **MCP** → toggle on. Then restart LibreChat: `docker compose restart librechat`.
+**Artifacts not rendering / Sandpack crashes with `crypto.subtle` error:**
+Artifacts require a secure context. Access LibreChat via `https://` (port 443) through the nginx proxy — `http://` on port 3080 will not work for artifact rendering. Accept the self-signed certificate warning in your browser.
 
 **ClickHouse OSS MCP (`clickhouse-oss-source`) not appearing:**
 The MCP server uses `npx` on first start and may take 30–60 seconds to download packages.

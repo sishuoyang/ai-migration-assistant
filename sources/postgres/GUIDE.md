@@ -35,7 +35,7 @@ docker compose logs postgres -f   # watch seed progress
 
 ### Step 3: Open LibreChat
 
-Navigate to **http://localhost:3080**. Sign in (`admin@playground.local` / `playground`).
+Navigate to **https://localhost** (or `https://<server-ip>` for remote deployments). Accept the self-signed certificate warning. Sign in (`admin@playground.local` / `playground`).
 
 **Select a model** from the dropdown in the top bar (Claude, Gemini, or GPT-4). The agent will not respond correctly until a model is explicitly selected.
 

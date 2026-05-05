@@ -168,6 +168,21 @@ services:
     networks:
       - playground-net
 
+  # ── HTTPS Reverse Proxy ─────────────────────────────────────
+  # Terminates TLS so browsers treat the origin as secure.
+  # Required for the Web Crypto API (crypto.subtle) used by LibreChat
+  # artifacts (Sandpack) — crypto.subtle is only available in HTTPS contexts.
+  nginx:
+    build: ./docker/nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    depends_on:
+      librechat:
+        condition: service_healthy
+    networks:
+      - playground-net
+
 volumes:
   pg-data:
   ch-oss-data:
