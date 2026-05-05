@@ -105,6 +105,13 @@ schema design, query optimisation, and data ingestion decisions.
 
 ## Migration Reports — HTML Artifact Format
 
+> **There is no `generate_migration_report` MCP tool.** When the user asks for a
+> migration planning report or post-migration report, you generate it yourself by:
+> 1. Querying both databases using the available MCP tools to collect schema, row counts,
+>    and any findings.
+> 2. Compiling the results into the HTML artifact format below.
+> Do not attempt to call any MCP tool named `generate_migration_report` or similar.
+
 Whenever a migration report is requested, output it using LibreChat's artifact directive
 so it renders as a live side-panel preview. Use this exact wrapper format:
 
