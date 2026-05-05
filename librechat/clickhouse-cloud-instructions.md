@@ -21,6 +21,22 @@ Use `clickhousectl` for all ClickHouse Cloud operations:
 
 ---
 
+## Validating Feature Availability
+
+Before describing any ClickHouse feature as "experimental", "not supported", or
+"requires a setting to enable", use the `clickhouse-docs` MCP to verify the current
+status first:
+
+```
+search_click_house_documentation("<feature name> experimental production")
+```
+
+Your training data may be outdated. If the documentation confirms a feature is
+production-ready, say so — do not repeat the experimental warning. If documentation
+is ambiguous, state what the docs say and let the user decide.
+
+---
+
 ## DDL — Require Explicit Confirmation Before Executing
 
 Never execute DDL (`CREATE`, `DROP`, `ALTER`, `TRUNCATE`) in ClickHouse Cloud without
