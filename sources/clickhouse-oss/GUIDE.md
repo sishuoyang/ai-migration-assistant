@@ -10,18 +10,7 @@ This guide walks you through a complete migration from a self-managed ClickHouse
 
 ## Phase 1 — Environment Setup (15 min)
 
-### Step 1: Enable the ClickHouse Cloud MCP server
-
-Before starting, enable the remote MCP server for your ClickHouse Cloud service:
-
-1. Open the [ClickHouse Cloud console](https://clickhouse.cloud)
-2. Select your service → click **Connect**
-3. Choose the **MCP** tab
-4. Toggle **Enable remote MCP server** on
-
-This is a one-time step per service. See the [official docs](https://clickhouse.com/docs/cloud/features/ai-ml/remote-mcp#enabling) for screenshots.
-
-### Step 2: Clone and configure
+### Step 1: Clone and configure
 
 ```bash
 git clone https://github.com/sishuoyang/ai-migration-assistant
@@ -37,7 +26,7 @@ CLICKHOUSE_CLOUD_USER=default
 CLICKHOUSE_CLOUD_PASSWORD=<your-password>
 ```
 
-### Step 3: Launch the playground
+### Step 2: Launch the playground
 
 ```bash
 make up
@@ -45,16 +34,20 @@ make up
 docker compose logs clickhouse-oss -f   # watch seed progress
 ```
 
-### Step 4: Open LibreChat
+### Step 3: Open LibreChat
 
-Navigate to **http://localhost:3080**. Sign in (`admin@playground.local` / `playground`). Select your preferred model.
+Navigate to **http://localhost:3080**. Sign in (`admin@playground.local` / `playground`).
 
-### Step 5: Enable MCP servers
+**Select a model** from the dropdown in the top bar (Claude, Gemini, or GPT-4). The agent will not respond correctly until a model is explicitly selected.
 
-Click the **MCP** icon in the chat toolbar and enable:
+### Step 4: Enable MCP servers
+
+Click the **MCP** icon in the chat toolbar and enable all three servers below.
+
+> **Important:** this step is required before sending your first message. The agent's migration knowledge (system prompt) is only injected when the MCP servers are active in the conversation. Without them, the model responds as a generic assistant.
+
 - `clickhouse-oss-source` — source ClickHouse OSS database
-- `clickhouse-cloud` — target ClickHouse Cloud (OAuth login required on first use)
-- `clickhouse-cloud-write` — write access to ClickHouse Cloud (DDL + INSERT)
+- `clickhousectl` — ClickHouse Cloud (read + write, DDL + INSERT)
 - `clickhouse-docs` — ClickHouse documentation
 
 Test connections:
@@ -111,7 +104,7 @@ Use prompt [03-design-schema.md](prompts/03-design-schema.md) or ask:
 
 > "Create the target schema in ClickHouse Cloud."
 
-The agent uses the `clickhouse-cloud-write` MCP to execute DDL directly — no copy-pasting required.
+The agent uses the `clickhousectl` MCP to execute DDL directly — no copy-pasting required.
 
 ---
 
@@ -140,7 +133,7 @@ source .env
 python3 sources/clickhouse-oss/scripts/migrate.py
 ```
 
-The script prints a backfill INSERT for `daily_stats` at the end — run it via the `clickhouse-cloud-write` MCP or paste it into the ClickHouse Cloud SQL console.
+The script prints a backfill INSERT for `daily_stats` at the end — run it via the `clickhousectl` MCP or paste it into the ClickHouse Cloud SQL console.
 
 ### Step 16: Validate row counts
 

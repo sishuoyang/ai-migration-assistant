@@ -13,4 +13,4 @@ For each of the 8 tables, make and explain your choices:
 I want to understand the thinking behind each decision, not just the SQL.
 
 Once the design is agreed, create the database and execute all the CREATE TABLE
-statements on clickhouse-cloud. Verify each table was created successfully.
+statements on clickhousectl. Verify each table was created successfully.

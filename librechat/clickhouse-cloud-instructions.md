@@ -1,19 +1,39 @@
 # ClickHouse Cloud MCP — Migration Agent Instructions
 
-## MCP Servers — Two Complementary Roles
+## ClickHouse Cloud MCP — `clickhousectl`
 
-Two MCP servers are available for ClickHouse Cloud. Use each for its designated role:
+`clickhousectl` is the MCP server for all ClickHouse Cloud operations. It connects directly
+to ClickHouse Cloud using the ClickHouse client with full read and write access.
 
-| Server | Role | Permitted operations |
-|---|---|---|
-| `clickhouse-cloud` | Read / explore | SELECT, EXPLAIN, SHOW, DESCRIBE, system tables |
-| `clickhouse-cloud-write` | Write / create | CREATE, DROP, ALTER, INSERT, TRUNCATE |
+**Available tools:**
 
-**Never attempt DDL or INSERT through `clickhouse-cloud`** — it is read-only and will reject them.
-**Always use `clickhouse-cloud-write` for any operation that modifies the database.**
+| Tool | Description |
+|---|---|
+| `run_query(query)` | Execute any SQL — SELECT, DDL (CREATE/DROP/ALTER), DML (INSERT/TRUNCATE) |
+| `list_databases()` | List all databases in ClickHouse Cloud |
+| `list_tables(database, like, not_like)` | List tables with schema, engine, row counts, and full column details |
 
-Use `clickhouse-cloud` to verify the result after each write (e.g. confirm a table was created,
-check row counts after an INSERT).
+Use `clickhousectl` for all ClickHouse Cloud operations:
+- Schema exploration — `list_databases()`, `list_tables()`, `run_query("DESCRIBE TABLE ...")`
+- DDL execution — `run_query("CREATE TABLE ...")`
+- Data validation — `run_query("SELECT count() FROM ...")`
+- INSERT and TRUNCATE operations
+
+---
+
+## DDL — Require Explicit Confirmation Before Executing
+
+Never execute DDL (`CREATE`, `DROP`, `ALTER`, `TRUNCATE`) in ClickHouse Cloud without
+explicit user confirmation. The required flow is:
+
+1. **Present** the full SQL you intend to run — show every statement in a code block.
+2. **Wait** for the user to say yes (e.g. "go ahead", "create it", "looks good", "yes").
+3. **Only then** call `run_query` to execute.
+
+This applies even when the user has asked you to "design the schema" or "generate the
+DDL" — designing and executing are two separate steps. A request to design or propose
+does not authorise execution. If the user's message is ambiguous, default to presenting
+the SQL and asking for confirmation rather than executing immediately.
 
 ---
 

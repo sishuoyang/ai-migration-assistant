@@ -85,8 +85,8 @@ services:
   # mcp-clickhouse + clickhouse-client CLI pointed at ClickHouse Cloud.
   # Provides write access (DDL + INSERT) that the managed mcp.clickhouse.cloud
   # server does not support. Credentials come from .env.
-  clickhouse-cloud-write-mcp:
-    build: ./docker/clickhouse-cloud-write-mcp
+  clickhousectl-mcp:
+    build: ./docker/clickhousectl-mcp
     environment:
       CLICKHOUSE_HOST: ${CLICKHOUSE_CLOUD_HOST:-}
       CLICKHOUSE_PORT: "8443"
@@ -120,7 +120,7 @@ services:
 
   # ── LibreChat (Chat UI) ──────────────────────────────────────
   librechat:
-    image: ghcr.io/danny-avila/librechat:latest
+    image: ghcr.io/danny-avila/librechat:v0.8.5
     ports:
       - "3080:3080"
     env_file:
@@ -139,7 +139,7 @@ services:
         condition: service_started
       clickhouse-oss-mcp:
         condition: service_started
-      clickhouse-cloud-write-mcp:
+      clickhousectl-mcp:
         condition: service_started
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3080/health || exit 1"]

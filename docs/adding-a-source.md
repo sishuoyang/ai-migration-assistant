@@ -208,7 +208,7 @@ mcpServers:
 
 The `serverInstructions` field describes *this MCP server's* role and data. Migration rules go in the source-specific system prompt file — see Step 4.
 
-> **Do not run `yq` manually** to update `librechat.yaml` — the build script only manages the `clickhouse-cloud` `serverInstructions`. All other edits to `librechat.yaml` are made directly.
+> **Do not run `yq` manually** to update `librechat.yaml` — the build script only manages the `clickhousectl` `serverInstructions`. All other edits to `librechat.yaml` are made directly.
 
 ---
 
@@ -310,7 +310,7 @@ Understanding the injection pipeline helps when debugging unexpected agent behav
 
 ### The three layers
 
-The agent's `serverInstructions` for the `clickhouse-cloud` MCP entry is assembled from three layers in order:
+The agent's `serverInstructions` for the `clickhousectl` MCP entry is assembled from three layers in order:
 
 ```
 Layer 1 — Base rules (generic, applies to all sources)
@@ -326,7 +326,7 @@ Layer 3 — ClickHouse best practices (from agent-skills submodule)
   agent-skills/skills/clickhouse-best-practices/AGENTS.md
   ↓
 Combined text → injected as serverInstructions
-             for the clickhouse-cloud MCP in librechat/librechat.yaml
+             for the clickhousectl MCP in librechat/librechat.yaml
 ```
 
 ### The build script
@@ -339,7 +339,7 @@ Combined text → injected as serverInstructions
 4. Exports the combined string as `$YQ_VALUE`
 5. Runs:
    ```bash
-   yq -i '.mcpServers.clickhouse-cloud.serverInstructions = strenv(YQ_VALUE)' \
+   yq -i '.mcpServers.clickhousectl.serverInstructions = strenv(YQ_VALUE)' \
      librechat/librechat.yaml
    ```
 
@@ -347,7 +347,7 @@ The `serverInstructions` field in `librechat.yaml` is a **build artifact** — i
 
 ### Where the prompt ends up
 
-LibreChat sends the `serverInstructions` content to the LLM as part of the system prompt when the `clickhouse-cloud` MCP is active. The agent sees all three layers as a single continuous block of text — there is no runtime layering.
+LibreChat sends the `serverInstructions` content to the LLM as part of the system prompt when the `clickhousectl` MCP is active. The agent sees all three layers as a single continuous block of text — there is no runtime layering.
 
 **All source-specific rules are always active** — the agent sees rules for every source you have added, regardless of which source is currently in use. This is by design: it keeps the build simple (no runtime source detection). Scope each rule clearly (e.g. *"This section applies when the SOURCE is Snowflake"*) so the agent can self-select the relevant section.
 
@@ -357,7 +357,7 @@ To inspect the current assembled prompt without restarting anything:
 
 ```bash
 # Print the current serverInstructions value
-yq '.mcpServers["clickhouse-cloud"].serverInstructions' librechat/librechat.yaml
+yq '.mcpServers["clickhousectl"].serverInstructions' librechat/librechat.yaml
 
 # Check the character count after a rebuild
 bash scripts/build-instructions.sh

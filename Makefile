@@ -11,11 +11,19 @@ setup:
 	@echo "✅ Setup complete. Run: make up"
 
 up:
+	@echo "Pulling images..."
+	docker compose pull
+	@echo "Building custom containers..."
+	docker compose build
+	@echo "Starting services..."
 	docker compose up -d
 	@echo ""
-	@echo "Playground starting. Open http://localhost:3080 when ready."
+	@echo "Container status:"
+	@docker compose ps --format "table {{.Name}}\t{{.Status}}\t{{.Ports}}"
+	@echo ""
+	@echo "Open http://localhost:3080 when LibreChat shows '(healthy)'."
 	@echo "First run: allow 5–10 min for Postgres to seed (~10M rows)."
-	@echo "Watch progress: docker compose logs postgres -f"
+	@echo "Watch seed: docker compose logs postgres -f"
 
 down:
 	docker compose down

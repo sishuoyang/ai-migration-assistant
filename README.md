@@ -37,16 +37,14 @@ The below components are part of the **ClickHouse Cloud**
 
 ## Prerequisites
 
-- Docker Desktop 4.20+ with at least 8 GB RAM allocated
+- Docker Desktop 4.20+ (macOS/Windows) or Docker Engine + Docker Compose v2 (Linux) with at least 8 GB RAM
+- `make` — pre-installed on macOS; on Debian/Ubuntu: `sudo apt-get install -y make`
+- `git` — pre-installed on most systems; on Debian/Ubuntu: `sudo apt-get install -y git`
+- `yq` — YAML processor used by `make setup`; on Debian/Ubuntu: `sudo snap install yq` or `sudo wget https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64 -O /usr/local/bin/yq && sudo chmod +x /usr/local/bin/yq`
 - An LLM API key (Anthropic Claude recommended, OpenAI also works)
 - A [ClickHouse Cloud](https://clickhouse.cloud) account with a running service
 - 10 GB free disk space
 
-> **Enable the ClickHouse Cloud MCP server before starting:**
-> In the ClickHouse Cloud console, open your service → **Connect** → **MCP** → toggle it on.
-> This is a one-time step per service. See [the docs](https://clickhouse.com/docs/cloud/features/ai-ml/remote-mcp#enabling) for screenshots.
->
-> **Note:** The Cloud managed MCP is read-only (exploration and validation). For schema creation and data loading, partners run SQL directly in the ClickHouse Cloud SQL console — the agent generates the statements.
 
 ## Quick Start
 
@@ -88,17 +86,17 @@ Open **http://localhost:3080** in your browser.
 ## Using the playground
 
 1. Sign in at **http://localhost:3080** with `admin@playground.local` / `playground`
-2. Select your preferred model from the dropdown
-3. Click the MCP icon and enable the servers for your chosen migration source:
+2. **Select a model** from the dropdown in the top bar — choose Claude, Gemini, or GPT-4. The agent will not respond correctly until a model is explicitly selected.
+3. **Enable MCP servers** by clicking the MCP icon in the chat toolbar. This step is required — the agent's migration knowledge (system prompt) is only injected when the MCP servers are active. Enable the servers for your chosen migration source:
 
    **PostgreSQL → ClickHouse Cloud:**
    - `postgres-source` — source Postgres database
-   - `clickhouse-cloud` — target ClickHouse Cloud (OAuth login required on first use)
+   - `clickhousectl` — ClickHouse Cloud (read + write, DDL + INSERT)
    - `clickhouse-docs` — ClickHouse documentation
 
    **ClickHouse OSS → ClickHouse Cloud:**
    - `clickhouse-oss-source` — source ClickHouse OSS database
-   - `clickhouse-cloud` — target ClickHouse Cloud (OAuth login required on first use)
+   - `clickhousectl` — ClickHouse Cloud (read + write, DDL + INSERT)
    - `clickhouse-docs` — ClickHouse documentation
 
 4. Follow the guide for your chosen source:
@@ -192,6 +190,14 @@ Set `DATASET_SIZE=small` in `.env`, run `make reset`.
 
 **Out of memory during seed:**
 Increase Docker Desktop memory to 8+ GB (Docker Desktop → Settings → Resources).
+
+**ClickHouse Cloud MCP OAuth fails with "No route matches URL /oauth/undefined/login":**
+`DOMAIN_CLIENT` and `DOMAIN_SERVER` are not set. LibreChat needs these to build the OAuth callback URL. Add them to `.env`:
+```
+DOMAIN_CLIENT=http://<your-host>:3080
+DOMAIN_SERVER=http://<your-host>:3080
+```
+Use `http://localhost:3080` for local installs, or your server's public IP/hostname for remote deployments. Then restart: `docker compose restart librechat`.
 
 **ClickHouse Cloud MCP not connecting / OAuth not working:**
 Ensure the remote MCP server is enabled for your service: ClickHouse Cloud console → service → **Connect** → **MCP** → toggle on. Then restart LibreChat: `docker compose restart librechat`.

@@ -34,7 +34,7 @@ Migration order (respects dimension→fact dependency):
 
 For each table:
 1. Show the INSERT ... SELECT statement before executing
-2. Execute on clickhouse-cloud
+2. Execute on clickhousectl
 3. Verify: compare count() in ClickHouse vs COUNT(*) in Postgres
 
 Postgres connection details:

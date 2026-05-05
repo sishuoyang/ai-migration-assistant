@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Builds the clickhouse-cloud serverInstructions in librechat.yaml by combining:
+# Builds the clickhousectl serverInstructions in librechat.yaml by combining:
 #   1. librechat/clickhouse-cloud-instructions.md  — base rules (generic, all sources)
 #   2. librechat/sources/*.md                      — source-specific rules (one file per source)
 #   3. agent-skills/skills/clickhouse-best-practices/AGENTS.md — ClickHouse best practices
@@ -66,7 +66,7 @@ else
     export YQ_VALUE="$(cat "$TEMPLATE_FILE")${SOURCES_CONTENT}"
 fi
 
-yq -i '.mcpServers.clickhouse-cloud.serverInstructions = strenv(YQ_VALUE)' "$LIBRECHAT_YAML"
+yq -i '.mcpServers.clickhousectl.serverInstructions = strenv(YQ_VALUE)' "$LIBRECHAT_YAML"
 
 TOTAL_CHARS=${#YQ_VALUE}
 echo "✅ serverInstructions injected ($TOTAL_CHARS chars total)"
