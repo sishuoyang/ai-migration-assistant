@@ -33,8 +33,8 @@ Postgres runs as a container inside the playground — no external
 account required.
 
 ```bash
-git clone https://github.com/sishuoyang/ai-migration-assistant
-cd ai-migration-assistant
+git clone https://github.com/sishuoyang/MigrationHouse
+cd MigrationHouse
 make setup
 ```
 

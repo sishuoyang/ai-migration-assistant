@@ -73,8 +73,8 @@ all on a real ClickHouse Cloud service you control.
 ## Quick Start
 
 ```bash
-git clone https://github.com/sishuoyang/ai-migration-assistant
-cd ai-migration-assistant
+git clone https://github.com/sishuoyang/MigrationHouse
+cd MigrationHouse
 make setup            # initialises submodules, injects agent skills, creates .env
 ```
 
