@@ -1,0 +1,6 @@
+{
+  "label": "ClickHouse OSS",
+  "default_database_env": "CH_OSS_DB",
+  "default_database_fallback": "default",
+  "agent_name": "ClickHouse OSS → ClickHouse Cloud"
+}

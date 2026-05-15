@@ -35,6 +35,7 @@ import os
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import uuid
 from dataclasses import dataclass, field
@@ -45,11 +46,41 @@ from mcp.server.fastmcp import FastMCP
 
 WORKSPACE = Path("/workspace")
 WORKSPACE.mkdir(exist_ok=True)
+(WORKSPACE / "state").mkdir(exist_ok=True)
 
 HOST = os.environ.get("MCP_HOST", "0.0.0.0")
 PORT = int(os.environ.get("MCP_PORT", "8000"))
 
 mcp = FastMCP("migration-runner", host=HOST, port=PORT)
+
+
+# ─────────────────────────────────────────────────────────────────────
+# migrationkit HTTP API — runs in a daemon thread alongside the MCP
+# server, sharing /workspace/state/migrationkit.db with any user-script
+# process that imports migrationkit.
+# ─────────────────────────────────────────────────────────────────────
+
+def _start_migrationkit_api() -> None:
+    api_port = int(os.environ.get("MIGRATIONKIT_API_PORT", "8001"))
+    try:
+        from migrationkit import api as mk_api
+        from migrationkit import state as mk_state  # noqa: F401  (ensures DB init)
+    except Exception as e:
+        # The MCP server is still useful without the API — log and continue.
+        print(f"[migration-runner] migrationkit API unavailable: {e}", file=sys.stderr)
+        return
+
+    def _serve():
+        try:
+            mk_api.serve(host="0.0.0.0", port=api_port)
+        except Exception as e:
+            print(f"[migration-runner] migrationkit API crashed: {e}", file=sys.stderr)
+
+    threading.Thread(target=_serve, daemon=True, name="migrationkit-api").start()
+    print(f"[migration-runner] migrationkit API listening on :{api_port}", flush=True)
+
+
+_start_migrationkit_api()
 
 
 def _resolve_workspace_path(path: str) -> Path:

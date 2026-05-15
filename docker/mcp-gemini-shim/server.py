@@ -22,6 +22,7 @@ Configuration via environment:
 """
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import logging
 import os
@@ -95,17 +96,64 @@ _upstream_stack: contextlib.AsyncExitStack | None = None
 
 
 async def _open_upstream() -> None:
-    """Open a persistent client session to the upstream MCP."""
+    """Open a persistent client session to the upstream MCP.
+
+    Retries with exponential backoff on transient failures. This makes
+    the shim resilient to two failure modes:
+
+    1. **Startup race**: the shim is brought up before the upstream
+       MCP server has finished initialising (its FastAPI startup
+       includes a Snowflake login round-trip). compose `depends_on`
+       with `service_healthy` is the first line of defence; this
+       retry loop is the safety net for environments where the
+       healthcheck isn't configured.
+    2. **Mid-run transient**: if the upstream restarts (image pull,
+       crash, etc.), the shim's existing session breaks. The supervisor
+       calls `_open_upstream` again after `_close_upstream`; without
+       retries, a still-warming-up upstream would bounce the shim into
+       its own crash loop.
+
+    Cap is generous (~60 s total wait) so we don't keep a CI / dev
+    machine spinning forever; uvicorn will exit and Docker will restart
+    the container, which is the desired behaviour after that point."""
     global _upstream_session, _upstream_stack
-    log.info("Connecting to upstream MCP: %s", UPSTREAM_URL)
-    _upstream_stack = contextlib.AsyncExitStack()
-    streams = await _upstream_stack.enter_async_context(sse_client(UPSTREAM_URL))
-    _upstream_session = await _upstream_stack.enter_async_context(
-        ClientSession(streams[0], streams[1])
+    delays = [0.5, 1, 2, 4, 8, 15, 30]   # max ~60s of waiting
+    last_error: Exception | None = None
+    for attempt, delay in enumerate([0] + delays, start=1):
+        if delay:
+            log.warning(
+                "Upstream connect failed (attempt %d/%d): %s — retrying in %ss",
+                attempt - 1, len(delays) + 1, last_error, delay,
+            )
+            await asyncio.sleep(delay)
+        try:
+            log.info("Connecting to upstream MCP: %s", UPSTREAM_URL)
+            stack = contextlib.AsyncExitStack()
+            streams = await stack.enter_async_context(sse_client(UPSTREAM_URL))
+            session = await stack.enter_async_context(
+                ClientSession(streams[0], streams[1])
+            )
+            await session.initialize()
+            tools = await session.list_tools()
+            log.info("Upstream advertised %d tools", len(tools.tools))
+            # Commit only on success — leave the previous state intact
+            # if a retry attempt failed half-way through.
+            _upstream_stack = stack
+            _upstream_session = session
+            return
+        except Exception as e:
+            last_error = e
+            # Clean up the partial stack so we don't leak file handles
+            # on retry.
+            try:
+                await stack.aclose()
+            except Exception:
+                pass
+
+    raise RuntimeError(
+        f"Could not connect to upstream MCP at {UPSTREAM_URL} after "
+        f"{len(delays) + 1} attempts. Last error: {last_error}"
     )
-    await _upstream_session.initialize()
-    tools = await _upstream_session.list_tools()
-    log.info("Upstream advertised %d tools", len(tools.tools))
 
 
 async def _close_upstream() -> None:

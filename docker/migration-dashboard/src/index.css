@@ -1,0 +1,28 @@
+/* Design system tokens (ClickHouse brand) and component styles.
+ * Verbatim from docs/design_handoff_migrationhouse/source — treat as
+ * upstream; don't fork. We dropped Tailwind because its `.table-row`,
+ * `.block`, `.hidden`, `.flex` etc. utility classes collided with the
+ * design's named component classes of the same name. The single
+ * component that used Tailwind (OlapQueriesDialog) is now plain CSS. */
+@import "./styles/colors_and_type.css";
+@import "./styles/app-styles.css";
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+/* Reset + global font (was previously provided by Tailwind's preflight). */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+  font-family: var(--font-body);
+}
+button {
+  font-family: inherit;
+}

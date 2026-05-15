@@ -63,6 +63,12 @@ services:
     depends_on:
       clickhouse-oss:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request, sys; r=urllib.request.urlopen('http://localhost:8000/sse', timeout=2); sys.exit(0 if r.status == 200 else 1)"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
     networks:
       - playground-net
 
@@ -77,6 +83,15 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    # Probe /sse via Python stdlib (image is a Python MCP server; no
+    # curl/wget). A 200 from /sse means the SSE transport is up and
+    # ready to accept LibreChat's MCP handshake.
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request, sys; r=urllib.request.urlopen('http://localhost:8000/sse', timeout=2); sys.exit(0 if r.status == 200 else 1)"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
     networks:
       - playground-net
 
@@ -102,6 +117,15 @@ services:
       CLICKHOUSE_MCP_AUTH_DISABLED: "true"
     ports:
       - "8003:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request, sys; r=urllib.request.urlopen('http://localhost:8000/sse', timeout=2); sys.exit(0 if r.status == 200 else 1)"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      # Slightly longer grace because this connects to ClickHouse Cloud
+      # over the public internet at boot — TLS + auth round-trip can
+      # take a few seconds.
+      start_period: 15s
     networks:
       - playground-net
 
@@ -122,6 +146,16 @@ services:
       SNOWFLAKE_ROLE: ${SNOWFLAKE_ROLE:-}
     ports:
       - "8004:8000"
+    # Probe the /sse endpoint using Python stdlib — the image is Python
+    # already and has no curl/wget. A 200 from /sse means the MCP server
+    # is accepting connections; partner shim won't try to open its
+    # upstream session until this passes.
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request, sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/sse', timeout=2).status == 200 else 1)"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
     networks:
       - playground-net
 
@@ -138,8 +172,60 @@ services:
       SHIM_NAME: "snowflake-source"
     ports:
       - "8014:8000"
+    # Wait for the upstream to be HEALTHY (not just started) before
+    # booting — the shim opens its upstream SSE session in `lifespan`
+    # at startup and used to crash if upstream wasn't ready yet.
+    # Combined with the in-process retry-with-backoff in server.py,
+    # this gives both first-boot ordering AND mid-run resilience.
     depends_on:
-      - snowflake-source
+      snowflake-source:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request, sys; r=urllib.request.urlopen('http://localhost:8000/sse', timeout=2); sys.exit(0 if r.status == 200 else 1)"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      # Generous grace: shim opens its upstream SSE session at boot;
+      # in the retry-with-backoff worst case it waits ~60s for the
+      # upstream to come up.
+      start_period: 75s
+    networks:
+      - playground-net
+
+  # ── BigQuery Source MCP ─────────────────────────────────────
+  # Official googleapis/mcp-toolbox image with the --prebuilt bigquery
+  # toolset (10 tools: list datasets/tables, get table info, execute SQL,
+  # forecast, contribution analysis, catalog search, …). writeMode is
+  # blocked at the toolset config so the agent can't accidentally mutate
+  # the source. Profile-gated because the toolbox crashes at startup if
+  # BIGQUERY_PROJECT or the SA key are missing.
+  bigquery-source:
+    profiles: ["bigquery"]
+    image: us-central1-docker.pkg.dev/database-toolbox/toolbox/toolbox:1.2.0
+    # ENTRYPOINT on the image is already `["/toolbox"]`, so `command:`
+    # entries become its args. Earlier versions of this file led with
+    # "toolbox" — that worked when the entrypoint was a shell — but
+    # 1.2.0 trips on it with `unknown command "toolbox" for "toolbox"`.
+    # `--ui` was also removed in 1.2.x.
+    command:
+      - "--prebuilt=bigquery"
+      - "--address=0.0.0.0"
+      - "--port=8000"
+    environment:
+      BIGQUERY_PROJECT: ${BIGQUERY_PROJECT:-}
+      BIGQUERY_LOCATION: ${BIGQUERY_LOCATION:-US}
+      GOOGLE_APPLICATION_CREDENTIALS: /secrets/gcp-key.json
+    volumes:
+      - ${BIGQUERY_KEY_FILE:-./secrets/gcp-key.json}:/secrets/gcp-key.json:ro
+    ports:
+      - "8007:8000"
+    # No explicit healthcheck — the toolbox 1.2.0 image is a scratch
+    # build containing only `/toolbox`, so `wget` / `curl` / `nc` /
+    # `/bin/sh` are all unavailable for in-container probing. The
+    # container is genuinely ready ~1 s after start (logs print
+    # "Server ready to serve!"); LibreChat's depends_on for this
+    # service uses `required: false`, so no other startup blocks on
+    # its health.
     networks:
       - playground-net
 
@@ -150,10 +236,53 @@ services:
   migration-runner:
     build: ./docker/migration-runner
     env_file: .env
+    environment:
+      MIGRATIONKIT_API_PORT: "8001"
+      MIGRATIONKIT_SOURCES_DIR: "/sources"
+      # CH_OSS_HOST / POSTGRES_HOST: NOT overridden here. The Python
+      # connector defaults to the Docker service name when the env var
+      # is unset (see migrationkit/sources/{clickhouse_oss,postgres}.py).
+      # Partners using their own external DBs set these to their real
+      # hostnames in .env and that wins. Setting them to "localhost" in
+      # .env never works in-container — that's a .env trap, not a
+      # docker-compose issue.
+      #
+      # GOOGLE_APPLICATION_CREDENTIALS points at the SA key mounted
+      # below — google-cloud-bigquery picks this up automatically when
+      # the BigQuery agent is in play. Setting it unconditionally is
+      # safe: only the BigQuery agent ever tries to authenticate, and
+      # missing the file only matters for that agent.
+      GOOGLE_APPLICATION_CREDENTIALS: /secrets/gcp-key.json
+      # Override the host-relative `./secrets/gcp-key.json` that .env
+      # carries — inside the container the bind mount lands the key
+      # at /secrets/gcp-key.json. Without these overrides, anything
+      # reading BIGQUERY_KEY_FILE / STAGING_GCS_KEY_FILE (e.g.
+      # GCSStage.from_env()) trips on a relative path that doesn't
+      # resolve against /workspace.
+      BIGQUERY_KEY_FILE: /secrets/gcp-key.json
+      STAGING_GCS_KEY_FILE: /secrets/gcp-key.json
     volumes:
       - migration-workspace:/workspace
+      # Read-only mount so the migrationkit API can serve each source's
+      # sample_olap_queries.sql to the dashboard.
+      - ./sources:/sources:ro
+      # BigQuery SA key — same path as bigquery-source above so Python
+      # scripts can authenticate. Default path is gitignored.
+      - ${BIGQUERY_KEY_FILE:-./secrets/gcp-key.json}:/secrets/gcp-key.json:ro
     ports:
-      - "8005:8000"
+      - "8005:8000"   # MCP (SSE)
+      - "8006:8001"   # migrationkit HTTP API
+    # Healthcheck targets the FastAPI /api/health on port 8001 (cheaper
+    # than probing /sse on the MCP port; both come up in the same
+    # process so either signals readiness). Lets LibreChat and the
+    # dashboard wait until the migrationkit API + MCP server are
+    # actually serving before depending on them.
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request, sys; r=urllib.request.urlopen('http://localhost:8001/api/health', timeout=2); sys.exit(0 if r.status == 200 else 1)"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
     networks:
       - playground-net
 
@@ -184,15 +313,39 @@ services:
       ALLOW_REGISTRATION: "true"
     volumes:
       - ./librechat/librechat.yaml:/app/librechat.yaml
+    # Wait for every MCP server to be HEALTHY (not just started) before
+    # LibreChat boots. Otherwise LibreChat opens MCP SSE sessions to
+    # half-ready servers and surfaces "MCP error 0" / "Failed to fetch
+    # tools" — the partner sees the agent missing all of its tools
+    # without any indication of why. The healthcheck-gated wait also
+    # makes the failure mode an obvious "still waiting on X" in
+    # `docker compose ps` instead of a silent runtime bug.
+    #
+    # snowflake-source / snowflake-source-shim are profile-gated to
+    # `snowflake`; Compose silently skips depends_on entries for services
+    # excluded by the active profile set, so leaving them here is safe.
     depends_on:
       mongodb:
         condition: service_healthy
       postgres-mcp:
-        condition: service_started
+        condition: service_healthy
       clickhouse-oss-mcp:
-        condition: service_started
+        condition: service_healthy
       clickhousectl-mcp:
+        condition: service_healthy
+      migration-runner:
+        condition: service_healthy
+      snowflake-source-shim:
+        condition: service_healthy
+        required: false
+      bigquery-source:
+        # service_started (not service_healthy) — the toolbox 1.2.0
+        # image has no shell-utility binaries, so it can't host an
+        # in-container healthcheck. It logs "Server ready to serve!"
+        # within ~1 s of starting, so "started" is the strongest
+        # check we can express.
         condition: service_started
+        required: false
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3080/health || exit 1"]
       interval: 10s
@@ -270,6 +423,7 @@ services:
         agents=(
           "postgres|Postgres → ClickHouse Cloud|POSTGRES"
           "snowflake|Snowflake → ClickHouse Cloud|SNOWFLAKE"
+          "bigquery|BigQuery → ClickHouse Cloud|BIGQUERY"
           "clickhouse-oss|ClickHouse OSS → ClickHouse Cloud|CLICKHOUSE_OSS"
         )
         SHARED_MCPS=(clickhousectl clickhouse-docs migration-runner)
@@ -325,6 +479,16 @@ services:
   # Terminates TLS so browsers treat the origin as secure.
   # Required for the Web Crypto API (crypto.subtle) used by LibreChat
   # artifacts (Sandpack) — crypto.subtle is only available in HTTPS contexts.
+  # ── migration-dashboard (read-only progress UI, Phase 2) ─────
+  # Static React SPA served by an in-container nginx. The main playground
+  # nginx fronts this at https://localhost/dashboard/ alongside LibreChat
+  # at /. Talks to the migrationkit API at /api/mk/ (also proxied by
+  # main nginx) to read run state and stream events via SSE.
+  migration-dashboard:
+    build: ./docker/migration-dashboard
+    networks:
+      - playground-net
+
   nginx:
     build: ./docker/nginx
     ports:
@@ -333,6 +497,10 @@ services:
     depends_on:
       librechat:
         condition: service_healthy
+      migration-dashboard:
+        condition: service_started
+      migration-runner:
+        condition: service_started
     networks:
       - playground-net
 

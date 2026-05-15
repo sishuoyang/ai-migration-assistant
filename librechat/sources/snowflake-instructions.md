@@ -24,6 +24,31 @@ SELECT count(*) FROM MY_DB.MY_SCHEMA.MY_TABLE;
 In the ClickHouse target schema, use lowercase by convention. Don't carry
 Snowflake's uppercase into ClickHouse.
 
+**Create exactly ONE target object per source table.** Do not add an
+UPPERCASE view (or any other "case-compatibility shim") on top of the
+lowercase MergeTree table. Past agents have tried this — for each
+Snowflake table FOO they created both `foo` (the real MergeTree) AND
+`FOO` (a view forwarding to `foo`) so that a migration script's
+`target_table="FOO"` (matching Snowflake's uppercase metadata) would
+also resolve. The result is a footgun:
+
+- `client.insert("FOO", …)` from `clickhouse-connect` sends INSERT
+  to a regular VIEW. ClickHouse silently routes it through the
+  view's SELECT, which may write to the underlying table — or may
+  not, depending on the view definition. The Migrator's `rows_done`
+  counter increments either way, so the run shows "done" even when
+  no rows landed.
+- Step 3 (Validate) then counts rows on `FOO` (the view, empty
+  projection) and reports a 0-vs-N mismatch. The data is in `foo`
+  but Validator was pointed at `FOO`.
+
+The fix is to pick ONE name and stick to it. The library handles
+case mismatch on the row dict's KEYS via the preflight case-map; it
+does **not** create dual-cased tables on your behalf. In every
+migration script, pass `target_table="foo"` (lowercase) — the
+Migrator's preflight will introspect the target and case-map row
+keys at insert time.
+
 ---
 
 ## Schema Discovery — Don't Assume Anything
@@ -152,7 +177,6 @@ choose.
 writes to the target. The agent calls `run_python` on `migration-runner`
 and streams output back into the chat. Use this when:
 - Type coercion is non-trivial (VARIANT, OBJECT, NUMBER precision)
-- You want explicit batching by date range or ID range
 - The partner wants a connector-pattern walkthrough
 
 **Rule:** never paste Python into the chat for the partner to run locally.
@@ -172,29 +196,29 @@ the runner user has no install permission.
 | Tool | When to use |
 |---|---|
 | `run_python(code, timeout_seconds=3600)` | Synchronous, one tool call. Use ONLY for short scripts (<60 s) — schema checks, validation queries, small inserts. Output appears only when the script exits, so for anything longer the chat stays blank for the whole run. |
-| `run_python_background(code, timeout_seconds=3600)` + `tail_python_job(job_id, stdout_offset, stderr_offset, max_wait_seconds=60)` | **Mandatory for actual data migrations.** Launches in the background, returns a `job_id` immediately. Then call `tail_python_job` in a loop, passing back the offsets each time, until `status == "done"`. Every tail call's tool-result is visible in the chat, giving the partner a chunk of streaming progress every ~60 s. |
+| `run_python_background(code, timeout_seconds=3600)` + `tail_python_job(job_id, max_wait_seconds=60)` | **Mandatory for actual data migrations.** Launches in the background, returns a `job_id` immediately. Dispatch the script, then issue **ONE** `tail_python_job` call to wait for completion or surface the first chunk of progress — then stop. The dashboard's Migration tab renders live per-table progress in real time; the partner watches it there, not in chat. |
 
-**Background+tail pattern — use this whenever the script will run >60s:**
+**Background+tail pattern — dispatch + ONE tail + stop:**
 
 ```python
 # 1. Launch the migration in the background
 launch = run_python_background(code=migration_script, timeout_seconds=3600)
 job_id = launch["job_id"]
 
-# 2. Tail-poll loop. Pass returned offsets back on each call.
-stdout_off, stderr_off = 0, 0
-while True:
-    r = tail_python_job(
-        job_id=job_id,
-        stdout_offset=stdout_off,
-        stderr_offset=stderr_off,
-        max_wait_seconds=60,
-    )
-    stdout_off = r["stdout_offset"]
-    stderr_off = r["stderr_offset"]
-    if r["status"] == "done":
-        break
+# 2. ONE tail call — waits up to max_wait_seconds for the job to finish
+#    (or returns a status=running snapshot if it's still going).
+r = tail_python_job(job_id=job_id, max_wait_seconds=60)
+# Then STOP. Do NOT loop tail_python_job — the dashboard streams progress.
+# Surface a one-line summary in chat and point the partner to the dashboard.
 ```
+
+**Do NOT poll in a `while True:` loop.** Each `tail_python_job` call replays
+the full conversation context — repeated polling burns LLM tokens quadratically
+for no benefit, since the dashboard's Migration tab already renders live
+per-table row counts, throughput, and status. If the first tail returns
+`status == "running"`, that's the signal to STOP, tell the partner *"migration
+running — watch the Migration tab"*, and let them resume the conversation once
+they see the run reach `done` in the dashboard.
 
 **Timeout sizing.** Both `run_python` and `run_python_background` default to
 3600 s (1 h). For multi-million-row migrations, pass an explicit
@@ -297,8 +321,9 @@ explicit `POPULATE` or with a separate backfill INSERT.
 
 ### Time Travel (`AT(TIMESTAMP => ...)` / `BEFORE(STATEMENT => ...)`)
 
-No equivalent in ClickHouse. Flag any reliance on Time Travel as a feature
-gap in the migration report.
+No equivalent in ClickHouse. Flag any reliance on Time Travel as a
+feature gap to the partner in chat (and, if you're producing a planning
+report artifact, list it under **Key Challenges**).
 
 ### Iceberg Tables
 
@@ -368,7 +393,7 @@ ch = clickhouse_connect.get_client(
     port     = 8443,
     username = os.environ.get("CLICKHOUSE_CLOUD_USER", "default"),
     password = os.environ["CLICKHOUSE_CLOUD_PASSWORD"],
-    database = os.environ.get("CLICKHOUSE_CLOUD_DATABASE", "migration_target"),
+    database = os.environ["CLICKHOUSE_CLOUD_DATABASE"],
     secure   = True,
     verify   = False,
 )

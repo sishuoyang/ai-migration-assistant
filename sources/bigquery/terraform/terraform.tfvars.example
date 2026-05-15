@@ -1,0 +1,11 @@
+# Attach mode (recommended) — point at an existing GCP sandbox project.
+existing_project_id   = "my-gcp-sandbox"
+dataset_name          = "migration_demo"
+location              = "US"
+create_staging_bucket = false
+
+# Greenfield mode — leave existing_project_id = null and supply a billing
+# account. Terraform will create a fresh project + enable the BigQuery
+# and Storage APIs.
+# existing_project_id  = null
+# billing_account_id   = "01ABCD-234567-89EFGH"

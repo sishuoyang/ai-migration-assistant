@@ -1,5 +1,69 @@
 ## ClickHouse OSS → ClickHouse Cloud Migration
 
+---
+
+### Schema Discovery — Use `clickhouse-oss-source`, Not `migration-runner`
+
+For ALL schema discovery and read-only inspection of the OSS instance,
+issue SQL via the `clickhouse-oss-source` MCP. The `migration-runner`
+MCP is **only** for data movement once the schema is understood.
+
+Why this matters: `clickhouse-oss-source` returns rows directly in the
+chat (one tool-call block per query — visible to the partner). Driving
+the same queries through `migration-runner` means authoring a Python
+script per inspection — five `run_python` round-trips for what should
+be five MCP calls, with output the partner can't see until each script
+exits.
+
+**Discovery checklist for every CH OSS migration** — each step is one
+query via `clickhouse-oss-source`:
+
+1. **Databases + tables with row counts and bytes**:
+   ```sql
+   SELECT database, name, engine,
+          total_rows, total_bytes
+   FROM system.tables
+   WHERE database NOT IN ('system','INFORMATION_SCHEMA','information_schema')
+   ORDER BY total_bytes DESC;
+   ```
+
+2. **Full DDL** for each object — preserves PARTITION BY, ORDER BY,
+   TTL, codecs, projections:
+   ```sql
+   SHOW CREATE TABLE <database>.<table>;
+   ```
+
+3. **Per-column types + nullability + cardinality estimate** (whether
+   a column is `LowCardinality(String)` candidate, needs Decimal):
+   ```sql
+   DESCRIBE TABLE <database>.<table>;
+   SELECT count(), uniq(<col>) FROM <database>.<table>;
+   ```
+
+4. **AggregatingMergeTree / MaterializedView inventory** (these need
+   the recreate-and-backfill pattern below, not a straight copy):
+   ```sql
+   SELECT database, name, engine
+   FROM system.tables
+   WHERE engine LIKE '%AggregatingMergeTree%'
+      OR engine = 'MaterializedView';
+   ```
+
+5. **Projections + skip indexes** (cheap to recreate on the target,
+   but easy to forget):
+   ```sql
+   SELECT * FROM system.projection_parts
+   WHERE database = '<db>' AND table = '<table>' LIMIT 5;
+
+   SELECT * FROM system.data_skipping_indices
+   WHERE database = '<db>' AND table = '<table>';
+   ```
+
+Do not reach for `run_python` on `migration-runner` until step 2 (data
+movement) — discovery stays on `clickhouse-oss-source`.
+
+---
+
 This section applies when the SOURCE database is ClickHouse OSS (self-managed).
 
 ---
@@ -54,16 +118,16 @@ After migration, reading from the aggregated table requires merge functions:
 `SimpleAggregateFunction` columns (sum, min, max) can be read with plain
 aggregation — no merge function required.
 
-Example for a `daily_stats` table with mixed types:
+Example for a rollup table with mixed aggregate column types:
 ```sql
 SELECT
-    date,
-    uniqMerge(visitors)          AS unique_visitors,   -- AggregateFunction
-    sum(sessions)                AS sessions,           -- SimpleAggregateFunction
-    sum(pageviews)               AS pageviews
-FROM migration_target.daily_stats
-GROUP BY date
-ORDER BY date;
+    <bucket_col>,
+    uniqMerge(<aggfunc_col>)        AS unique_count,    -- AggregateFunction(uniq, …)
+    sum(<simple_agg_col>)           AS total,           -- SimpleAggregateFunction(sum, …)
+    sum(<plain_col>)                AS sum_plain        -- plain numeric column
+FROM <target_db>.<rollup_table>
+GROUP BY <bucket_col>
+ORDER BY <bucket_col>;
 ```
 
 ---
@@ -107,18 +171,12 @@ CH_OSS_PASSWORD = os.getenv("CH_OSS_PASSWORD", "")
 CH_OSS_DB       = os.getenv("CH_OSS_DB", "analytics")
 
 # ClickHouse Cloud target
-CH_HOST     = os.getenv("CLICKHOUSE_CLOUD_HOST", "")
+CH_HOST     = os.environ["CLICKHOUSE_CLOUD_HOST"]
 CH_PORT     = int(os.getenv("CLICKHOUSE_CLOUD_PORT", "8443"))
-CH_USER     = os.getenv("CLICKHOUSE_CLOUD_USER", "default")
-CH_PASSWORD = os.getenv("CLICKHOUSE_CLOUD_PASSWORD", "")
-CH_DB       = os.getenv("CLICKHOUSE_CLOUD_DATABASE", "migration_target")
+CH_USER     = os.environ.get("CLICKHOUSE_CLOUD_USER", "default")
+CH_PASSWORD = os.environ["CLICKHOUSE_CLOUD_PASSWORD"]
+CH_DB       = os.environ["CLICKHOUSE_CLOUD_DATABASE"]
 ```
-
-**Chunking strategy by row count:**
-- < 500K rows: single query, no chunking
-- 500K – 5M rows: chunk by month (`toYYYYMM(<ts_col>) = <partition>`)
-- > 5M rows: chunk by month, with LIMIT/OFFSET within each month if a single
-  month still exceeds `BATCH_SIZE` (200K default)
 
 **Column names:** ClickHouse column names come back correctly from `result.column_names`
 — no alias mapping needed (unlike psycopg2 DictCursor).

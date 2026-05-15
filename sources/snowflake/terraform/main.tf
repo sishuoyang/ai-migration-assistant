@@ -9,6 +9,10 @@ terraform {
       source  = "hashicorp/random"
       version = ">= 3.5.0"
     }
+    aws = {
+      source  = "hashicorp/aws"
+      version = ">= 5.0.0"
+    }
   }
 }
 
@@ -18,6 +22,23 @@ provider "snowflake" {
   user              = var.admin_user
   password          = var.admin_password
   role              = var.admin_role
+}
+
+# AWS provider for the optional S3 staging bucket. The AWS provider can't
+# be fully lazy: it resolves credentials during configuration even when no
+# resource needs them. To let partners use the Snowflake-only path without
+# AWS credentials, we feed dummy creds when create_staging_bucket=false
+# (every aws_* resource is count=0 so they're never actually used). When
+# create_staging_bucket=true, both fields become null and the provider
+# falls back to the standard credential chain (AWS_PROFILE,
+# AWS_ACCESS_KEY_ID, etc.).
+provider "aws" {
+  region                      = var.aws_region
+  skip_credentials_validation = true
+  skip_requesting_account_id  = true
+  skip_metadata_api_check     = true
+  access_key                  = var.create_staging_bucket ? null : "AKIAIOSFODNN7EXAMPLE"
+  secret_key                  = var.create_staging_bucket ? null : "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
 }
 
 resource "random_password" "demo_user" {
@@ -31,7 +52,7 @@ resource "snowflake_warehouse" "demo" {
   warehouse_size = var.warehouse_size
   auto_suspend   = 60
   auto_resume    = true
-  comment        = "Dedicated warehouse for AI Migration Assistant demo."
+  comment        = "Dedicated warehouse for MigrationHouse demo."
 }
 
 # Database + schema. The setup_workload.sql script does CREATE IF NOT EXISTS
@@ -39,7 +60,7 @@ resource "snowflake_warehouse" "demo" {
 # script populates them with TPC-H tables.
 resource "snowflake_database" "demo" {
   name    = "MIGRATION_DEMO"
-  comment = "AI Migration Assistant demo: TPC-H + Snowflake-specific augmentations."
+  comment = "MigrationHouse demo: TPC-H + Snowflake-specific augmentations."
 }
 
 resource "snowflake_schema" "retail" {
@@ -51,7 +72,7 @@ resource "snowflake_schema" "retail" {
 # Role + user dedicated to the demo (limited blast radius).
 resource "snowflake_account_role" "demo" {
   name    = "MIGRATION_DEMO_ROLE"
-  comment = "Read access to MIGRATION_DEMO for the AI Migration Assistant demo."
+  comment = "Read access to MIGRATION_DEMO for the MigrationHouse demo."
 }
 
 resource "snowflake_grant_privileges_to_account_role" "demo_warehouse" {
@@ -149,4 +170,76 @@ resource "null_resource" "setup_workload" {
     setup_py  = filemd5("${path.module}/../scripts/setup_workload.py")
     setup_sql = filemd5("${path.module}/../scripts/setup_workload.sql")
   }
+}
+
+# ── Optional S3 staging bucket for the bulk-export path ──────────────
+# When create_staging_bucket=true, provisions an S3 bucket + scoped IAM
+# user that Migrator.add_table_via_s3() uses to bulk-export tables.
+# Mirrors the BigQuery module's create_staging_bucket pattern.
+resource "random_id" "staging_suffix" {
+  count       = var.create_staging_bucket ? 1 : 0
+  byte_length = 4
+}
+
+resource "aws_s3_bucket" "staging" {
+  count         = var.create_staging_bucket ? 1 : 0
+  bucket        = "ai-migration-staging-${random_id.staging_suffix[0].hex}"
+  force_destroy = true
+}
+
+resource "aws_s3_bucket_public_access_block" "staging" {
+  count                   = var.create_staging_bucket ? 1 : 0
+  bucket                  = aws_s3_bucket.staging[0].id
+  block_public_acls       = true
+  block_public_policy     = true
+  ignore_public_acls      = true
+  restrict_public_buckets = true
+}
+
+resource "aws_s3_bucket_lifecycle_configuration" "staging" {
+  count  = var.create_staging_bucket ? 1 : 0
+  bucket = aws_s3_bucket.staging[0].id
+  rule {
+    id     = "expire-migrationkit-prefix"
+    status = "Enabled"
+    filter {
+      prefix = ""
+    }
+    expiration {
+      days = 7
+    }
+  }
+}
+
+resource "aws_iam_user" "staging" {
+  count = var.create_staging_bucket ? 1 : 0
+  name  = "ai-migration-staging-${random_id.staging_suffix[0].hex}"
+}
+
+resource "aws_iam_user_policy" "staging" {
+  count = var.create_staging_bucket ? 1 : 0
+  name  = "ai-migration-staging-access"
+  user  = aws_iam_user.staging[0].name
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid      = "ListBucket"
+        Effect   = "Allow"
+        Action   = ["s3:ListBucket", "s3:GetBucketLocation"]
+        Resource = aws_s3_bucket.staging[0].arn
+      },
+      {
+        Sid      = "RWPrefix"
+        Effect   = "Allow"
+        Action   = ["s3:PutObject", "s3:GetObject", "s3:DeleteObject"]
+        Resource = "${aws_s3_bucket.staging[0].arn}/migrationkit/*"
+      },
+    ]
+  })
+}
+
+resource "aws_iam_access_key" "staging" {
+  count = var.create_staging_bucket ? 1 : 0
+  user  = aws_iam_user.staging[0].name
 }

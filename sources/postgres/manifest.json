@@ -1,0 +1,6 @@
+{
+  "label": "Postgres",
+  "default_database_env": "POSTGRES_DB",
+  "default_database_fallback": "ecommerce",
+  "agent_name": "Postgres → ClickHouse Cloud"
+}

@@ -1,0 +1,6 @@
+{
+  "label": "BigQuery",
+  "default_database_env": "BIGQUERY_DATASET",
+  "default_database_fallback": "migration_demo",
+  "agent_name": "BigQuery → ClickHouse Cloud"
+}

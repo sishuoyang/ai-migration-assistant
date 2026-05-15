@@ -1,210 +1,252 @@
-# AI Migration Assistant
+# MigrationHouse
 
-A self-contained Docker Compose environment for hands-on AI-assisted database migration to ClickHouse Cloud. Partners use a chat interface backed by real MCP database connections to work through schema analysis, data migration, query rewriting, and performance optimisation — all with AI guidance.
+**AI-assisted database migration to ClickHouse Cloud — run a real
+migration end-to-end in under an hour.**
 
-![Architecture](docs/architecture.png)
+![MigrationHouse](docs/migrationhouse.png)
 
-> To regenerate the diagram after editing `docs/architecture.mmd`: `make diagram`
+MigrationHouse is a self-contained Docker Compose playground that
+turns the messy reality of database migration into a six-click
+workflow. Pick a source (PostgreSQL, Snowflake, BigQuery, or
+ClickHouse OSS), click each step on the dashboard, and watch an LLM
+agent with live MCP connections do the work: introspect the source,
+design a ClickHouse target schema, move the data, validate row
+counts, rewrite analytical queries, and benchmark source vs target —
+all on a real ClickHouse Cloud service you control.
 
-## Migration Sources
+## Why MigrationHouse
 
-Three independent migration scenarios are included — each with its own dataset, guide, and pre-built LibreChat agent:
+- **End-to-end, not a toy.** The agent reads your actual source
+  schema, makes type-by-type decisions you can push back on
+  (`Decimal` vs `Float`, `JSON` vs `String`, `Nullable(T)` vs
+  `DEFAULT`), runs the DDL, moves data with batched inserts or
+  object-storage staging, and benchmarks the result. By the end you
+  have a working ClickHouse Cloud database, not a slide deck.
+- **Grounded in ClickHouse best practices.** Every agent in
+  MigrationHouse loads the official
+  [**ClickHouse/agent-skills**](https://github.com/ClickHouse/agent-skills)
+  knowledge pack as part of its system prompt — the same rules the
+  ClickHouse team curates for LLM-driven schema design and query
+  optimisation. The agent knows the canonical answers on engine
+  choice (`MergeTree` vs `ReplicatedMergeTree` vs `SharedMergeTree`),
+  `ORDER BY` key selection from real query patterns,
+  `LowCardinality` vs `Enum` trade-offs, `Decimal` semantics for
+  money, materialised-view design, codec selection, and the rest —
+  not its training-data approximation of them. The skills are pulled
+  in as a git submodule so updates ship with `git submodule update
+  --remote`.
+- **Source-agnostic in the same shape.** Four sources, one dashboard,
+  one set of six step buttons. The agent and source MCP swap behind
+  the scenes when you change the source dropdown — no setup juggling.
+- **MCP-native.** Every database connection is exposed through an MCP
+  server. The agent doesn't paste SQL into your terminal; it queries
+  the source directly via the MCP and runs DDL on the target through
+  a write-enabled `clickhousectl` MCP.
+- **Bring your own keys.** Bring your own LLM API key (Anthropic /
+  OpenAI / Google / Bedrock) and your own ClickHouse Cloud service.
+  No vendor lock, no managed-only model.
+- **Self-hostable and open-source.** Everything runs locally in
+  Docker Compose. Extend it with your own source database — see
+  [docs/adding-a-source.md](docs/adding-a-source.md) for the
+  internals and the contributor walkthrough.
 
-| Source | Dataset | Guide |
+## Migration sources
+
+| Source | Demo workload | Guide |
 |---|---|---|
-| **PostgreSQL → ClickHouse Cloud** | E-commerce platform (orders, events, sessions) | [sources/postgres/GUIDE.md](sources/postgres/GUIDE.md) |
-| **ClickHouse OSS → ClickHouse Cloud** | Web analytics platform (pageviews, sessions, conversions) | [sources/clickhouse-oss/GUIDE.md](sources/clickhouse-oss/GUIDE.md) |
-| **Snowflake → ClickHouse Cloud** | TPC-H + Snowflake-specific augmentations (VARIANT, TIMESTAMP_TZ, Stream, Dynamic Table, Clustering Key); partner-provided Snowflake account | [sources/snowflake/GUIDE.md](sources/snowflake/GUIDE.md) |
-
-Want to contribute a new dataset or database engine? See **[docs/adding-a-source.md](docs/adding-a-source.md)**.
-
-## What's included
-
-**Local Docker Compose**
-| Component | Purpose |
-|---|---|
-| PostgreSQL 16 | Source DB — pre-loaded e-commerce OLAP dataset |
-| Postgres MCP server | Gives the AI agent full access to the Postgres source |
-| ClickHouse OSS | Source DB — pre-loaded web analytics OLAP dataset |
-| ClickHouse OSS MCP server | Gives the AI agent full access to the ClickHouse OSS source |
-| Snowflake MCP server | Read-only access to a partner-provided Snowflake account (TPC-H + Snowflake-specific augmentations); opt-in via `make up-snowflake` |
-| Migration Runner | In-chat Python sandbox — agent runs migration scripts directly, no local Python required |
-| LibreChat | Provider-agnostic chat UI — bring your own API key |
-
-The below components are part of the **ClickHouse Cloud**
-| Component | Purpose |
-|---|---|
-| ClickHouse Cloud | Target DB — your Cloud service, ready for migration |
-| ClickHouse Cloud MCP | Gives the AI agent read access to ClickHouse Cloud |
-| ClickHouse Docs MCP | Lets the agent search ClickHouse docs on the fly |
+| **PostgreSQL → ClickHouse Cloud** | E-commerce platform + TPC-H option | [sources/postgres/GUIDE.md](sources/postgres/GUIDE.md) |
+| **ClickHouse OSS → ClickHouse Cloud** | Web analytics platform + TPC-H option | [sources/clickhouse-oss/GUIDE.md](sources/clickhouse-oss/GUIDE.md) |
+| **Snowflake → ClickHouse Cloud** | TPC-H + Snowflake-specific augmentations (VARIANT, TIMESTAMP_TZ, Stream, Dynamic Table, Clustering Key) | [sources/snowflake/GUIDE.md](sources/snowflake/GUIDE.md) |
+| **BigQuery → ClickHouse Cloud** | TPC-H + BigQuery-specific augmentations (STRUCT, ARRAY<STRUCT>, partitioned + clustered tables, materialized view) | [sources/bigquery/GUIDE.md](sources/bigquery/GUIDE.md) |
 
 ## Prerequisites
 
-- Docker Desktop 4.20+ (macOS/Windows) or Docker Engine + Docker Compose v2 (Linux) with at least 8 GB RAM
-- `make` — pre-installed on macOS; on Debian/Ubuntu: `sudo apt-get install -y make`
-- `git` — pre-installed on most systems; on Debian/Ubuntu: `sudo apt-get install -y git`
-- `yq` — YAML processor used by `make setup`; on Debian/Ubuntu: `sudo snap install yq` or `sudo wget https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64 -O /usr/local/bin/yq && sudo chmod +x /usr/local/bin/yq`
-- An LLM API key (Anthropic Claude recommended, OpenAI also works)
-- A [ClickHouse Cloud](https://clickhouse.cloud) account with a running service
+- Docker Desktop 4.20+ (macOS/Windows) or Docker Engine + Docker
+  Compose v2 (Linux) with at least 8 GB RAM
+- `make`, `git`, `yq` (YAML processor used by `make setup`)
+- An LLM API key (Anthropic Claude recommended, OpenAI / Gemini /
+  Bedrock also work)
+- A [ClickHouse Cloud](https://clickhouse.cloud) account with a
+  running service
 - 10 GB free disk space
-
 
 ## Quick Start
 
 ```bash
 git clone https://github.com/sishuoyang/ai-migration-assistant
 cd ai-migration-assistant
-make setup          # initialises submodules, injects agent skills, creates .env
+make setup            # initialises submodules, injects agent skills, creates .env
 ```
 
-Edit `.env` and add your LLM API key:
+Edit `.env` and add your credentials:
+
 ```bash
-ANTHROPIC_API_KEY=sk-ant-...        # or OPENAI_API_KEY=sk-...
+ANTHROPIC_API_KEY=sk-ant-...                # or OPENAI_API_KEY / GOOGLE_KEY / Bedrock keys
+CLICKHOUSE_CLOUD_HOST=<your-service>.clickhouse.cloud
+CLICKHOUSE_CLOUD_USER=default
+CLICKHOUSE_CLOUD_PASSWORD=<your-password>
 ```
 
 ```bash
 make up
 ```
 
-Open **https://localhost** in your browser (accept the self-signed certificate warning).
+Open **<https://localhost/dashboard/>** in your browser (accept the
+self-signed certificate warning). Sign in with
+`admin@playground.local` / `playground`.
 
-> **First run:** Both databases seed on startup — allow 5–10 minutes total.
-> - PostgreSQL generates ~10M rows (`DATASET_SIZE=medium`): `docker compose logs postgres -f`
-> - ClickHouse OSS loads ~12.2M rows (fixed): `docker compose logs clickhouse-oss -f`
+> **First run:** the bundled sources seed on startup — allow 5–10 min
+> total. PostgreSQL: `docker compose logs postgres -f`. ClickHouse
+> OSS: `docker compose logs clickhouse-oss -f`.
 
-## Default credentials
+For Snowflake or BigQuery, run `make up-snowflake` or `make
+up-bigquery` instead — both source MCPs are profile-gated because
+they need account credentials in `.env` (see the per-source GUIDE for
+the setup walkthrough).
 
-| Service | Detail |
-|---|---|
-| LibreChat login | `admin@playground.local` / `playground` |
-| Postgres host (internal) | `postgres:5432` |
-| Postgres database | `ecommerce` |
-| Postgres user / password | `playground` / `playground` |
-| ClickHouse OSS host (internal) | `clickhouse-oss:8123` |
-| ClickHouse OSS host (local) | `localhost:8123` |
-| ClickHouse OSS user / password | `default` / *(empty)* |
-| ClickHouse OSS database | `analytics` |
-| ClickHouse Cloud | credentials from `.env` (`CLICKHOUSE_CLOUD_HOST/USER/PASSWORD`) |
+## Using the MigrationHouse dashboard
 
-## Using the playground
+You'll land on the **MigrationHouse** dashboard with the LibreChat
+agent in the right pane.
 
-1. Sign in at **https://localhost** with `admin@playground.local` / `playground`.
-2. **Pick the agent that matches your source.** The agent dropdown lists three pre-built agents, each with the right MCPs and migration prompt already attached — no model toggling or MCP-checkbox wrangling required:
-   - `Postgres → ClickHouse Cloud`
-   - `Snowflake → ClickHouse Cloud` (requires `make up-snowflake` for the source MCP to be reachable)
-   - `ClickHouse OSS → ClickHouse Cloud`
-3. Follow the guide for that source:
-   - **Postgres:** [sources/postgres/GUIDE.md](sources/postgres/GUIDE.md)
-   - **Snowflake:** [sources/snowflake/GUIDE.md](sources/snowflake/GUIDE.md)
-   - **ClickHouse OSS:** [sources/clickhouse-oss/GUIDE.md](sources/clickhouse-oss/GUIDE.md)
-4. Use the copy-paste prompts in the corresponding `prompts/` directory for each phase.
+![MigrationHouse dashboard](docs/dashboard-overview.png)
 
-> **Want a different model per agent?** Set `AGENT_PROVIDER_<SOURCE>` / `AGENT_MODEL_<SOURCE>` in `.env` (e.g. `AGENT_MODEL_SNOWFLAKE=gpt-4o`) before first start, or use the LibreChat agent-settings UI to change a single agent's model afterward. To re-apply env changes, run `make reset-agent`.
+The dashboard is laid out top-to-bottom as five regions. Each control
+is described below.
 
-## Dataset sizes
+### SETUP card
 
-### PostgreSQL source (configurable)
+Three controls that determine which agent runs and what data it
+operates on. Change them before clicking any step button.
 
-| Size | Events | Seed time | RAM needed |
-|---|---|---|---|
-| `small` | 1M | ~1 min | 4 GB |
-| `medium` (default) | 10M | 5–10 min | 8 GB |
-| `large` | 30M | 20–30 min | 16 GB |
+- **Source dropdown** — `Postgres` / `Snowflake` / `BigQuery` /
+  `ClickHouse OSS`. Switching the source **auto-switches the
+  LibreChat agent** in the right pane to the matching pre-built agent
+  (e.g. picking BigQuery selects the `BigQuery → ClickHouse Cloud`
+  agent with its MCPs and system prompt). No agent toggling needed in
+  LibreChat.
+- **Source database dropdown** — the actual database / dataset /
+  schema name on the source. For bundled workloads: `ecommerce`
+  (Postgres) or `analytics` (ClickHouse OSS) or `migration_demo`
+  (Snowflake / BigQuery). For TPC-H loaded via `make tpch-load-*`:
+  `tpch`.
+- **Edit · N OLAP button** — opens an editor for the analytical
+  queries that drive step 1's `ORDER BY` design, step 4's query
+  rewrite, and step 5's benchmark. `N` is how many queries are
+  currently loaded.
 
-Set `DATASET_SIZE=small` in `.env` for faster startup on low-spec machines.
+### CONVERSATION card
 
-### ClickHouse OSS source (fixed)
+- **Conversation picker** — every step you click creates (or resumes)
+  a LibreChat conversation pinned to the active source. The current
+  conversation's title and last-touched time appear here. Picking a
+  past conversation from the dropdown loads it in the right pane.
+- *resumes on refresh* — the dashboard remembers your last
+  conversation; reloading the page returns you to it.
 
-| Table | Rows |
-|---|---|
-| `analytics.projects` | 1,000 |
-| `analytics.sessions` | 2,000,000 |
-| `analytics.pageviews` | 10,000,000 |
-| `analytics.conversions` | 200,000 |
-| `analytics.daily_stats` | pre-aggregated from sessions |
+### STEPS · CLICK TO FIRE PROMPT card
 
-Seed time: ~3–5 minutes on first run.
+Six buttons that drive the migration end-to-end. Each click fires the
+corresponding `sources/<source>/prompts/0X-*.md` file as a chat prompt
+and updates the dashboard's live state.
 
-## Enable LLM Tracing with Langfuse (optional)
+| # | Button | What it does | Watch on |
+|---:|---|---|---|
+| 1 | **Discover & Design Schema** | Agent introspects the source via the source MCP, reads OLAP queries, proposes ClickHouse schema, runs DDL. | Chat — review schema decisions |
+| 2 | **Migrate Data** | Agent writes a `migrationkit` script, dispatches as a background job, stops. Data movement runs to completion. | Dashboard — Migration tab |
+| 3 | **Validate** | Per-table row-count parity, source vs target. Stops on mismatch. | Dashboard — Validation tab |
+| 4 | **Rewrite Queries** | Agent translates each OLAP query to ClickHouse SQL in chat. | Chat — review each rewrite |
+| 5 | **Benchmark** | Per-query timing on both engines (server-side, not wall-clock). | Dashboard — Benchmark tab |
+| 6 | **Optimize** | Agent proposes MVs / Projections / codec changes; iterate then re-fire step 5. | Chat + Benchmark tab |
 
-LibreChat has native Langfuse support — add three lines to `.env` to get token usage,
-latency, and full conversation traces for every AI interaction in the playground.
+*all six always clickable* — you can re-fire any step at any time
+(e.g. re-run validation after fixing the schema). Steps don't strictly
+have to be in order, though doing them out of order is rarely useful.
 
-1. Sign up free at [cloud.langfuse.com](https://cloud.langfuse.com) → **Settings → API Keys**
-2. Add to `.env`:
-```bash
-LANGFUSE_PUBLIC_KEY=pk-lf-...
-LANGFUSE_SECRET_KEY=sk-lf-...
-LANGFUSE_BASE_URL=https://cloud.langfuse.com
-```
-3. `docker compose restart librechat`
+### KPI DASHBOARD card (LIVE)
 
-## Customising the Agent System Prompt
+Live progress for whichever step is most recently active. Header
+reads `KPI DASHBOARD · LIVE · STEP N — <step name>`.
 
-The agent's behaviour is controlled by a set of modular instruction files:
+- **Run picker** — every fired step creates a `run_id` (e.g.
+  `migrate-tpch-1778836107`). The picker shows the active run with
+  its current status badge (`RUNNING` / `DONE` / `PAUSED` / `FAILED`
+  / `CANCELLED`). Open the picker to switch back to any previous run
+  on the same source.
+- **Pause / Cancel buttons** — visible only when a run is `RUNNING`.
+  Pause holds the run mid-batch (resume from the same point). Cancel
+  terminates it irrecoverably.
+- **Run details line** — `<source> · <source-db> → <target-db> ·
+  started <relative time>`. Confirms the run's parameters at a
+  glance.
+- **Tab bar** — three views over the same run:
+  - **Migration** (default): KPI tiles (`ROWS / SEC` with live
+    sparkline, `ETA`, `ELAPSED`, `TABLES`), overall progress bar
+    (absolute + percentage), per-table progress bars with row counts
+    and percentages, and a milestone feed (table-transition events
+    with timestamps).
+  - **Validation**: one row per table — `source rows` / `target rows`
+    / `matched`. Populated after step 3.
+  - **Benchmark**: one row per query — `source ms` / `target ms` /
+    `speedup`. Populated after step 5.
 
-| File | Purpose |
-|---|---|
-| [librechat/clickhouse-cloud-instructions.md](librechat/clickhouse-cloud-instructions.md) | Base rules + best-practices, injected into `mcpServers.clickhousectl.serverInstructions` (shared by all three agents) |
-| [librechat/sources/postgres-instructions.md](librechat/sources/postgres-instructions.md) | Postgres-specific rules, injected into `mcpServers.postgres-source.serverInstructions` |
-| [librechat/sources/snowflake-instructions.md](librechat/sources/snowflake-instructions.md) | Snowflake-specific rules, injected into `mcpServers.snowflake-source.serverInstructions` |
-| [librechat/sources/clickhouse-oss-instructions.md](librechat/sources/clickhouse-oss-instructions.md) | ClickHouse OSS-specific rules, injected into `mcpServers.clickhouse-oss-source.serverInstructions` |
+### Right pane — LibreChat
 
-Each pre-built agent attaches exactly the MCPs for its source, so it transparently receives only the relevant `serverInstructions` — no per-agent prompt is set. `make setup` rebuilds the injected blocks idempotently. Don't edit anything below the `--- Migration Rules (auto-injected …) ---` marker in `librechat.yaml`; the MCP-purpose blurb above the marker IS hand-editable.
+- **Conversation header** — the active agent's name and copy /
+  bookmark / `+` (new conversation) icons. Use `+` to start fresh if
+  the conversation has drifted.
+- **Agent message thread** — the agent's reasoning, tool calls
+  (collapsed by default — click to expand), and replies. Push back
+  here when a decision looks wrong; the agent should reason, not just
+  produce.
+- **Message input** — for free-form chat. The six step buttons cover
+  the canonical flow; the message input is for clarifications,
+  pushback, and off-script questions.
 
-**To add a new migration source:** see **[docs/adding-a-source.md](docs/adding-a-source.md)** for the full walkthrough — Docker service, MCP wiring, and system prompt authoring.
+## Where to go next
 
-**To apply changes:**
-```bash
-# 1. Edit the instruction file(s)
-$EDITOR librechat/sources/clickhouse-oss-instructions.md
+- **Run a migration end-to-end** — follow the per-source guide:
+  [Postgres](sources/postgres/GUIDE.md) ·
+  [Snowflake](sources/snowflake/GUIDE.md) ·
+  [BigQuery](sources/bigquery/GUIDE.md) ·
+  [ClickHouse OSS](sources/clickhouse-oss/GUIDE.md).
+- **Add your own source database** —
+  [docs/adding-a-source.md](docs/adding-a-source.md) explains the
+  internals (architecture diagram, `migration-runner` and
+  `migration-dashboard` deep dives) and walks through extending the
+  playground with a new source.
+- **Customise the agent's system prompt** — see the *Customising the
+  agent system prompt* section of
+  [docs/adding-a-source.md](docs/adding-a-source.md).
 
-# 2. Rebuild and inject into librechat.yaml
-make setup
-
-# 3. Reload the agent
-docker compose restart librechat
-```
-
-## Commands
+## Common commands
 
 ```bash
 make setup               # first-time setup (submodules + agent skills + .env)
 make up                  # start the playground (Postgres + ClickHouse OSS sources)
 make up-snowflake        # also start the Snowflake source MCP (needs SNOWFLAKE_* in .env)
-make snowflake-setup     # set up MIGRATION_DEMO.RETAIL workload in existing Snowflake (Path A)
-make snowflake-provision # provision a fresh Snowflake demo env with Terraform (Path B)
+make up-bigquery         # also start the BigQuery source MCP (needs BIGQUERY_* in .env)
 make down                # stop without removing data
 make reset               # destroy volumes and start fresh
-make reset-agent         # delete + recreate the three pre-built agents (e.g. after changing AGENT_PROVIDER/AGENT_MODEL in .env)
-make health              # check all services are healthy
-make migration-status    # check progress of a running migration script (target row counts)
-make logs                # tail all service logs
-make diagram             # regenerate docs/architecture.png from docs/architecture.mmd
+make reset-agent         # delete + recreate the four pre-built agents (after model/provider changes)
 ```
 
-## Troubleshooting
+The full command list lives in the [Makefile](Makefile); see the
+[adding-a-source guide](docs/adding-a-source.md#operational-commands)
+for the operational reference.
 
-**MCP servers not showing in LibreChat:**
-Verify `interface.mcpServers.use: true` is set in `librechat/librechat.yaml`. Each pre-built agent attaches its MCPs automatically — if a picked agent has no MCPs in its panel, run `make reset-agent` to repair it.
+## Default credentials
 
-**Agent not appearing in the dropdown:**
-`docker compose logs librechat-init` should report `✅ Created '<Agent name>'` (or `already configured — skipping`). On the very first `make up`, init runs after LibreChat reports healthy — give it ~10 seconds, then refresh the page.
+| Service | Detail |
+|---|---|
+| Dashboard URL | `https://localhost/dashboard/` |
+| LibreChat login | `admin@playground.local` / `playground` |
+| ClickHouse Cloud | credentials from `.env` (`CLICKHOUSE_CLOUD_HOST/USER/PASSWORD`) |
 
-**Postgres seed takes too long:**
-Set `DATASET_SIZE=small` in `.env`, run `make reset`.
+Per-source database credentials (Postgres, ClickHouse OSS) live in
+each per-source GUIDE — you rarely need them outside the agent path.
 
-**Out of memory during seed:**
-Increase Docker Desktop memory to 8+ GB (Docker Desktop → Settings → Resources).
+## License
 
-**Artifacts not rendering / Sandpack crashes with `crypto.subtle` error:**
-Artifacts require a secure context. Access LibreChat via `https://` (port 443) through the nginx proxy — `http://` on port 3080 will not work for artifact rendering. Accept the self-signed certificate warning in your browser.
-
-**ClickHouse OSS MCP (`clickhouse-oss-source`) not appearing:**
-The MCP server uses `npx` on first start and may take 30–60 seconds to download packages.
-Check logs: `docker compose logs clickhouse-oss-mcp -f`. If it fails, restart:
-`docker compose restart clickhouse-oss-mcp`.
-
-**ClickHouse OSS seed taking longer than expected:**
-The init SQL loads 12.2M rows using `numbers()` — this is compute-bound, not I/O-bound.
-On slower machines allow up to 10 minutes: `docker compose logs clickhouse-oss -f`.
+Apache 2.0. Forks, PRs, and source contributions welcome — see
+[docs/adding-a-source.md](docs/adding-a-source.md).

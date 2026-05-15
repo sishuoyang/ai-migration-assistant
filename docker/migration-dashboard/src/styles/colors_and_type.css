@@ -1,0 +1,255 @@
+/* ClickHouse Design System — Colors & Type
+ * Source: ClickHouse brand guidelines (yellow-first, black secondary)
+ * Yellow is dominant in marketing; accent in product (where the theme reverses to black-first).
+ */
+
+/* ───────────────── Fonts ───────────────── */
+/* Söhne is the official body type for marketing. Söhne files were uploaded
+ * but the build environment cannot store the encoded filenames; please
+ * re-upload Söhne with ASCII names if you want it baked in. We currently
+ * fall back to Inter Tight / Inter for both display and body. Inter is the
+ * upload that succeeded. */
+
+@font-face { font-family: "Inter"; font-style: normal; font-weight: 100; font-display: swap; src: url("fonts/Inter-Thin.ttf") format("truetype"); }
+@font-face { font-family: "Inter"; font-style: normal; font-weight: 200; font-display: swap; src: url("fonts/Inter-ExtraLight.ttf") format("truetype"); }
+@font-face { font-family: "Inter"; font-style: normal; font-weight: 300; font-display: swap; src: url("fonts/Inter-Light.ttf") format("truetype"); }
+@font-face { font-family: "Inter"; font-style: normal; font-weight: 400; font-display: swap; src: url("fonts/Inter-Regular.ttf") format("truetype"); }
+@font-face { font-family: "Inter"; font-style: normal; font-weight: 500; font-display: swap; src: url("fonts/Inter-Medium.ttf") format("truetype"); }
+@font-face { font-family: "Inter"; font-style: normal; font-weight: 600; font-display: swap; src: url("fonts/Inter-SemiBold.ttf") format("truetype"); }
+@font-face { font-family: "Inter"; font-style: normal; font-weight: 700; font-display: swap; src: url("fonts/Inter-Bold.ttf") format("truetype"); }
+@font-face { font-family: "Inter"; font-style: normal; font-weight: 800; font-display: swap; src: url("fonts/Inter-ExtraBold.ttf") format("truetype"); }
+@font-face { font-family: "Inter"; font-style: normal; font-weight: 900; font-display: swap; src: url("fonts/Inter-Black.ttf") format("truetype"); }
+
+:root {
+  /* ── Core palette (from brand guidelines) ── */
+  --ch-yellow:        #FAFF69;   /* color.palette.primary.300 — the brand yellow */
+  --ch-yellow-deep:   #F2F75A;   /* hover/press for yellow surfaces */
+  --ch-yellow-tint:   #FFFFCC;   /* soft yellow background tint */
+
+  --ch-black:         #151515;   /* color.palette.neutral.900 — secondary brand black */
+  --ch-near-black:    #1F1F1F;
+  --ch-charcoal:      #2A2A2A;
+  --ch-graphite:      #3D3D3D;
+  --ch-steel:         #5A5A5A;
+  --ch-slate:         #8A8A8A;
+  --ch-silver:        #BFBFBF;
+  --ch-mist:          #E4E4E4;
+  --ch-fog:           #F0F0F0;
+  --ch-paper:         #F7F7F7;
+  --ch-white:         #FFFFFF;
+
+  /* Product accent colors — used sparingly for status & data viz */
+  --ch-blue:          #2A6FF2;
+  --ch-green:         #00C389;
+  --ch-red:           #E5484D;
+  --ch-amber:         #FFB020;
+  --ch-violet:        #8B5CF6;
+
+  /* ── Semantic — Brand mode (light, yellow-dominant) ── */
+  --bg:               var(--ch-yellow);
+  --bg-alt:           var(--ch-white);
+  --surface:          var(--ch-white);
+  --surface-alt:      var(--ch-paper);
+  --border:           var(--ch-black);
+  --border-subtle:    var(--ch-mist);
+
+  --fg:               var(--ch-black);
+  --fg-muted:         var(--ch-steel);
+  --fg-subtle:        var(--ch-slate);
+  --fg-on-yellow:     var(--ch-black);
+  --fg-on-black:      var(--ch-white);
+
+  /* Action colors */
+  --action:           var(--ch-black);
+  --action-fg:        var(--ch-yellow);
+  --action-hover:     var(--ch-charcoal);
+
+  /* Status */
+  --status-info:      var(--ch-blue);
+  --status-success:   var(--ch-green);
+  --status-danger:    var(--ch-red);
+  --status-warning:   var(--ch-amber);
+
+  /* ── Type families ── */
+  --font-display:     "Söhne", "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  --font-body:        "Söhne", "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  --font-mono:        "JetBrains Mono", "SF Mono", Menlo, Consolas, monospace;
+
+  /* ── Type scale ── */
+  --fs-display-2xl:   clamp(56px, 8vw, 128px);   /* hero billboards */
+  --fs-display-xl:    clamp(44px, 6vw, 88px);
+  --fs-display-lg:    clamp(36px, 4.5vw, 64px);
+  --fs-h1:            44px;
+  --fs-h2:            32px;
+  --fs-h3:            24px;
+  --fs-h4:            18px;
+  --fs-body-lg:       18px;
+  --fs-body:          15px;
+  --fs-body-sm:       13px;
+  --fs-caption:       12px;
+  --fs-micro:         11px;
+
+  --lh-tight:         0.95;
+  --lh-snug:          1.1;
+  --lh-display:       1.05;
+  --lh-body:          1.5;
+  --lh-relaxed:       1.6;
+
+  --tr-tight:         -0.03em;   /* tight on display */
+  --tr-snug:          -0.015em;
+  --tr-normal:        0;
+  --tr-wide:          0.04em;    /* eyebrows / small caps */
+
+  --fw-light:         300;
+  --fw-regular:       400;
+  --fw-medium:        500;
+  --fw-semibold:      600;
+  --fw-bold:          700;
+  --fw-extrabold:     800;
+  --fw-black:         900;
+
+  /* ── Spacing scale (4px base) ── */
+  --sp-1:  4px;
+  --sp-2:  8px;
+  --sp-3:  12px;
+  --sp-4:  16px;
+  --sp-5:  20px;
+  --sp-6:  24px;
+  --sp-8:  32px;
+  --sp-10: 40px;
+  --sp-12: 48px;
+  --sp-16: 64px;
+  --sp-20: 80px;
+  --sp-24: 96px;
+
+  /* ── Radius — sparing. ClickHouse leans crisp, not rounded ── */
+  --r-0:   0;
+  --r-sm:  2px;
+  --r-md:  4px;
+  --r-lg:  8px;
+  --r-xl:  12px;
+  --r-pill: 999px;
+
+  /* ── Elevation — minimal; the brand prefers flat blocks + hard borders ── */
+  --shadow-sm:  0 1px 2px rgba(21,21,21,0.06);
+  --shadow-md:  0 4px 12px rgba(21,21,21,0.08);
+  --shadow-lg:  0 12px 32px rgba(21,21,21,0.12);
+  --shadow-xl:  0 24px 64px rgba(21,21,21,0.16);
+  --shadow-hard: 6px 6px 0 var(--ch-black);   /* signature offset block-shadow */
+
+  /* ── Borders ── */
+  --bw-hairline:   1px;
+  --bw-default:    1.5px;
+  --bw-bold:       2px;
+  --bw-display:    3px;
+
+  /* ── Motion ── */
+  --ease-out:      cubic-bezier(0.2, 0.8, 0.2, 1);
+  --ease-in-out:   cubic-bezier(0.65, 0, 0.35, 1);
+  --ease-spring:   cubic-bezier(0.34, 1.56, 0.64, 1);
+  --dur-instant:   80ms;
+  --dur-fast:      150ms;
+  --dur-base:      220ms;
+  --dur-slow:      400ms;
+}
+
+/* ───────────────── Product mode (dark, black-dominant) ─────────────────
+ * The ClickHouse Cloud product reverses the brand: black is the canvas,
+ * yellow is reserved for accents and hero CTAs. Apply on a wrapper:
+ *   <div data-mode="product"> ... </div>
+ */
+[data-mode="product"] {
+  --bg:               var(--ch-black);
+  --bg-alt:           var(--ch-near-black);
+  --surface:          var(--ch-charcoal);
+  --surface-alt:      var(--ch-graphite);
+  --border:           #2E2E2E;
+  --border-subtle:    #242424;
+
+  --fg:               var(--ch-white);
+  --fg-muted:         #B5B5B5;
+  --fg-subtle:        #7A7A7A;
+
+  --action:           var(--ch-yellow);
+  --action-fg:        var(--ch-black);
+  --action-hover:     var(--ch-yellow-deep);
+
+  --shadow-sm:  0 1px 2px rgba(0,0,0,0.4);
+  --shadow-md:  0 4px 12px rgba(0,0,0,0.5);
+  --shadow-lg:  0 12px 32px rgba(0,0,0,0.6);
+  --shadow-hard: 6px 6px 0 var(--ch-yellow);
+}
+
+/* ───────────────── Element defaults ───────────────── */
+html, body {
+  font-family: var(--font-body);
+  font-size: var(--fs-body);
+  line-height: var(--lh-body);
+  color: var(--fg);
+  background: var(--bg);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+h1, .h1 {
+  font-family: var(--font-display);
+  font-size: var(--fs-h1);
+  line-height: var(--lh-snug);
+  letter-spacing: var(--tr-tight);
+  font-weight: var(--fw-bold);
+  margin: 0;
+}
+h2, .h2 {
+  font-family: var(--font-display);
+  font-size: var(--fs-h2);
+  line-height: var(--lh-snug);
+  letter-spacing: var(--tr-snug);
+  font-weight: var(--fw-bold);
+  margin: 0;
+}
+h3, .h3 {
+  font-size: var(--fs-h3);
+  line-height: var(--lh-snug);
+  letter-spacing: var(--tr-snug);
+  font-weight: var(--fw-semibold);
+  margin: 0;
+}
+h4, .h4 {
+  font-size: var(--fs-h4);
+  font-weight: var(--fw-semibold);
+  letter-spacing: var(--tr-snug);
+  margin: 0;
+}
+p { margin: 0 0 var(--sp-4); }
+
+.display-2xl, .display-xl, .display-lg {
+  font-family: var(--font-display);
+  font-weight: var(--fw-bold);
+  letter-spacing: var(--tr-tight);
+  line-height: var(--lh-display);
+}
+.display-2xl { font-size: var(--fs-display-2xl); }
+.display-xl  { font-size: var(--fs-display-xl); }
+.display-lg  { font-size: var(--fs-display-lg); }
+
+.eyebrow {
+  font-size: var(--fs-caption);
+  font-weight: var(--fw-semibold);
+  letter-spacing: var(--tr-wide);
+  text-transform: uppercase;
+}
+
+code, kbd, samp, pre {
+  font-family: var(--font-mono);
+  font-size: 0.92em;
+}
+
+a {
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  text-decoration-thickness: 1px;
+}
+a:hover { text-decoration-thickness: 2px; }
+
+::selection { background: var(--ch-yellow); color: var(--ch-black); }

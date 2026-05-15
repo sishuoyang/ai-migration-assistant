@@ -4,64 +4,102 @@ These rules apply when the data source is PostgreSQL.
 
 ---
 
-## Data Migration — Batch Large Tables
+## Schema Discovery — Don't Assume Anything
 
-When migrating a table with more than **500,000 rows**, never generate a single
-`INSERT INTO ... SELECT * FROM postgresql(...)` without a WHERE filter.
-Large unbatched migrations time out and are hard to resume.
+Never assume column names, table names, types, or that any particular
+Postgres feature is or is not in use. Discover the actual schema at
+runtime via the `postgres-source` MCP.
 
-**Before writing any batch, always query the actual data range first:**
-```sql
--- For date-based batching:
-SELECT MIN(<ts_col>), MAX(<ts_col>), count() FROM postgresql(..., '<table>', ...)
+**Use `postgres-source` (not `migration-runner`) for ALL schema
+discovery and read-only inspection of Postgres.** The `migration-runner`
+MCP is **only** for data movement once the schema is understood —
+running it for discovery is a footgun. Reasons:
 
--- For ID-based batching:
-SELECT MIN(<id_col>), MAX(<id_col>), count() FROM postgresql(..., '<table>', ...)
-```
+- `postgres-source` exposes `execute_sql` which returns rows directly
+  in the chat — no Python script to author, no `tail_python_job` round-
+  trips, no opaque psycopg2 output to re-parse. One MCP call per query,
+  one tool-call block per query, results visible to the partner inline.
+- Using `migration-runner` for inspection means writing a 20-line
+  Python script (connection setup, cursor, fetch, print) for what is
+  one SQL query. The partner sees a `run_python` call with no output
+  until the script exits; iterating ("oh, I also need to see indexes")
+  means re-editing and re-running. Five run_python calls for what
+  should be five `execute_sql` calls.
+- `migration-runner` inherits env vars from the playground's `.env` via
+  `env_file:`. If a stale `PG_DATABASE` is set there from a previous
+  workload, a psycopg2 connection through `migration-runner` will scope
+  to that database and your inventory will miss everything else.
 
-**Always generate ALL batches covering the complete data range in one script.**
-Never generate only Batch 1 or a single example batch — the user must be able to run
-the full script to completion without asking for more batches. Number each batch
-clearly (`-- Batch 1 of N`) so progress is trackable.
+**The discovery checklist for every Postgres migration** — every step
+below is **one `execute_sql` call on `postgres-source`**:
 
-**By date range (preferred when a timestamp column exists):**
-```sql
--- Example: large event table batched monthly
--- Batch 1 of N
-INSERT INTO target_db.<table> SELECT ... FROM postgresql(..., '<table>')
-WHERE <ts_col> >= '2024-01-01' AND <ts_col> < '2024-02-01';
--- Batch 2 of N
-INSERT INTO target_db.<table> SELECT ... FROM postgresql(..., '<table>')
-WHERE <ts_col> >= '2024-02-01' AND <ts_col> < '2024-03-01';
--- ... continue through all months to MAX(<ts_col>)
-```
+1. **List databases and schemas:**
+   ```sql
+   SELECT datname FROM pg_database WHERE datistemplate = false;
+   SELECT schema_name FROM information_schema.schemata
+     WHERE schema_name NOT IN ('pg_catalog','information_schema');
+   ```
 
-**By ID range (when no timestamp column exists):**
-```sql
--- Example: 1.5M rows, IDs 1–1,500,000 → 3 batches of 500K
--- Batch 1 of 3
-INSERT INTO target_db.<table> SELECT ... FROM postgresql(..., '<table>')
-WHERE <id_col> >= 1 AND <id_col> <= 500000;
--- Batch 2 of 3
-INSERT INTO target_db.<table> SELECT ... FROM postgresql(..., '<table>')
-WHERE <id_col> > 500000 AND <id_col> <= 1000000;
--- Batch 3 of 3
-INSERT INTO target_db.<table> SELECT ... FROM postgresql(..., '<table>')
-WHERE <id_col> > 1000000 AND <id_col> <= 1500000;
-```
+2. **List every table with row counts and byte sizes** — one query,
+   not per-table loops:
+   ```sql
+   SELECT n.nspname AS schema,
+          c.relname AS table,
+          c.reltuples::bigint AS approx_rows,
+          pg_total_relation_size(c.oid) AS bytes
+   FROM pg_class c
+   JOIN pg_namespace n ON n.oid = c.relnamespace
+   WHERE c.relkind IN ('r','p')                       -- table + partitioned table
+     AND n.nspname NOT IN ('pg_catalog','information_schema')
+   ORDER BY bytes DESC;
+   ```
 
-Batch size guidelines by row count:
-- **> 10M rows**: batch by **month**
-- **1M – 10M rows**: batch by **quarter** or **500K-row ID chunks**
-- **500K – 1M rows**: batch by **500K-row ID chunks**
-- **< 500K rows**: single statement, no batching needed
+3. **Get columns + types + nullability + defaults** for a table:
+   ```sql
+   SELECT column_name, data_type, udt_name, is_nullable,
+          column_default, character_maximum_length, numeric_precision, numeric_scale
+   FROM information_schema.columns
+   WHERE table_schema = '<schema>' AND table_name = '<table>'
+   ORDER BY ordinal_position;
+   ```
 
-End every migration script with a row count validation:
-```sql
-SELECT '<table>' AS table_name, count() AS ch_rows FROM target_db.<table>
-UNION ALL SELECT '<table2>', count() FROM target_db.<table2>
--- ... one line per migrated table
-```
+4. **List indexes** — hint at which columns the workload actually
+   filters on:
+   ```sql
+   SELECT indexname, indexdef
+   FROM pg_indexes
+   WHERE schemaname = '<schema>' AND tablename = '<table>';
+   ```
+
+5. **Spot Postgres-specific features that need careful mapping**:
+   ```sql
+   -- ENUM types and their members (verify actual data with DISTINCT later)
+   SELECT t.typname, e.enumlabel
+   FROM pg_type t JOIN pg_enum e ON e.enumtypid = t.oid
+   ORDER BY t.typname, e.enumsortorder;
+
+   -- Materialised views
+   SELECT schemaname, matviewname FROM pg_matviews;
+
+   -- Partitioned-table parents
+   SELECT n.nspname, c.relname FROM pg_class c
+   JOIN pg_namespace n ON n.oid = c.relnamespace
+   WHERE c.relkind = 'p';
+   ```
+
+6. **Sample data + nullability + cardinality** per column before
+   designing the target — this is what tells you whether a column is
+   `Nullable(T)`, a `LowCardinality(String)` candidate, or needs full
+   Decimal precision:
+   ```sql
+   SELECT * FROM <schema>.<table> LIMIT 5;
+   SELECT count(*), count(<col>) FROM <schema>.<table>;
+   SELECT count(DISTINCT <col>) FROM <schema>.<table>;
+   ```
+
+Produce a migration inventory before generating any target schema. Do
+not reach for `run_python` on `migration-runner` until step 2 (data
+movement) — discovery is exclusively `postgres-source.execute_sql`.
 
 ---
 
@@ -150,11 +188,11 @@ PG_DB       = os.getenv("PG_DB", "")
 
 **ClickHouse Cloud connection** — read from environment variables:
 ```python
-CH_HOST     = os.getenv("CLICKHOUSE_CLOUD_HOST", "")
+CH_HOST     = os.environ["CLICKHOUSE_CLOUD_HOST"]
 CH_PORT     = int(os.getenv("CLICKHOUSE_CLOUD_PORT", "8443"))
-CH_USER     = os.getenv("CLICKHOUSE_CLOUD_USER", "default")
-CH_PASSWORD = os.getenv("CLICKHOUSE_CLOUD_PASSWORD", "")
-CH_DB       = os.getenv("CLICKHOUSE_CLOUD_DATABASE", "migration_target")
+CH_USER     = os.environ.get("CLICKHOUSE_CLOUD_USER", "default")
+CH_PASSWORD = os.environ["CLICKHOUSE_CLOUD_PASSWORD"]
+CH_DB       = os.environ["CLICKHOUSE_CLOUD_DATABASE"]
 ```
 
 **SSL certificate verification** — always pass `verify=False` to avoid macOS cert chain errors:

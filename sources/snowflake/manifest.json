@@ -1,0 +1,6 @@
+{
+  "label": "Snowflake",
+  "default_database_env": "SNOWFLAKE_DATABASE",
+  "default_database_fallback": "MIGRATION_DEMO",
+  "agent_name": "Snowflake → ClickHouse Cloud"
+}

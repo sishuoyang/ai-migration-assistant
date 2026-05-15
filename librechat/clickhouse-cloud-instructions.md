@@ -72,17 +72,19 @@ partial failures — idempotent DDL ensures that is always safe.
 
 ## Migration Order — Dimension Tables Before Facts
 
-Always migrate tables in dependency order to avoid foreign key or join mismatches
-during validation:
+Always migrate tables in dependency order to avoid foreign-key or join
+mismatches during validation:
 
-1. **Dimension tables first** — small, no dependencies on other tables.
-   Typical dimensions: `users`, `products`, `campaigns`, lookup/reference tables.
-2. **Fact tables second** — large, reference dimensions.
-   Typical facts: `orders`, `order_items`, `events`, `sessions`, `ad_impressions`,
-   `inventory_snapshots`.
+1. **Dimension tables first** — small, no outbound foreign keys; typically
+   the lookup / reference tables and other dimensions that fact tables
+   reference.
+2. **Fact tables second** — large, reference dimensions. Migrate after every
+   dimension they reference has landed.
 
-Within each group, start with the smallest table (by row count) to validate the
-pipeline end-to-end before committing to the largest.
+Within each group, start with the smallest table (by row count) to validate
+the pipeline end-to-end before committing to the largest. Use the inventory
+you built in the discovery step to pick the order — don't assume any
+particular table names.
 
 ---
 
@@ -115,82 +117,3 @@ Always present both statements together — never create a MV without the accomp
 
 The rules below are the official ClickHouse best practices. Apply them for all
 schema design, query optimisation, and data ingestion decisions.
-
-
----
-
-## Migration Reports — HTML Artifact Format
-
-> **There is no `generate_migration_report` MCP tool.** When the user asks for a
-> migration planning report or post-migration report, you generate it yourself by:
-> 1. Querying both databases using the available MCP tools to collect schema, row counts,
->    and any findings.
-> 2. Compiling the results into the HTML artifact format below.
-> Do not attempt to call any MCP tool named `generate_migration_report` or similar.
-
-Whenever a migration report is requested, output it using LibreChat's artifact directive
-so it renders as a live side-panel preview. Use this exact wrapper format:
-
-```
-:::artifact{identifier="migration-report-YYYYMMDD" type="text/html" title="<Report Title>"}
-<!DOCTYPE html>
-<html lang="en">
-<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
-<body>
-  ... report content here ...
-</body>
-</html>
-:::
-```
-
-Rules for the artifact wrapper:
-- `identifier` must be unique per report (e.g. `migration-plan-20240124`, `post-migration-20240124`)
-- `type` must be exactly `text/html`
-- `title` should reflect the report type and source DB name
-- Do NOT use a plain ```html``` fenced code block — that will only show raw source, not a rendered preview
-
-Both share the same base HTML rules:
-- All styles must be inline (no `<link>`, no `<style>` tag, no external resources)
-- Root element: `<div style="font-family:system-ui,sans-serif;max-width:880px;margin:0 auto;padding:24px">`
-- Header: report title (h2), generation timestamp (ISO-8601 UTC), source DB name → ClickHouse Cloud
-- Do not embed external images or scripts; keep the HTML fully self-contained
-
-Status badge inline styles (reuse across both report types):
-  ✅ OK / Ready  → background:#dcfce7; color:#166534; padding:2px 8px; border-radius:9999px
-  ⚠ Warning     → background:#fef9c3; color:#854d0e; padding:2px 8px; border-radius:9999px
-  ❌ Blocker     → background:#fee2e2; color:#991b1b; padding:2px 8px; border-radius:9999px
-
-### Report Type 1 — Migration Planning Report
-
-Produce this when the user asks to plan a migration, assess readiness, or review
-the source schema before migrating.
-
-Required sections:
-1. **Summary** — source DB, total tables, total rows (estimated), overall readiness badge
-2. **Key Challenges** — table listing every identified challenge with:
-   - Challenge description
-   - Affected table(s) or column(s)
-   - Severity badge (OK / Warning / Blocker)
-   - Recommended resolution
-3. **Schema Details** — table with columns:
-   Source Table | Engine | Partition Key | Sort Key | Approx Rows | Notes
-   Notes should flag: JSONB→JSON, ENUMs, arrays, nullable columns, unsupported types
-4. **Other Considerations** — bullet list covering: ORDER BY key design for ClickHouse
-   multi-tenant queries, data volume and chunking strategy, AggregatingMergeTree
-   backfill requirements, any DDL changes recommended before migrating
-
-### Report Type 2 — Post-Migration Report
-
-Produce this when the user asks to validate a completed migration, confirm row counts,
-or summarise what was created in ClickHouse Cloud.
-
-Required sections:
-1. **Summary metrics bar** — total tables migrated, rows transferred, tables ✅ / ⚠ / ❌
-2. **Data Integrity — Table Comparison** — table with columns:
-   Source Table | Source Rows | Target Table | Target Rows | Delta % | Status
-   Delta % = abs(source−target)/source × 100; flag >0.01% as Warning, >1% as Blocker
-3. **Object Mapping** — table listing every object created in ClickHouse Cloud:
-   Object Type | Name | Source Object | Description
-   Object types include: Table, Materialized View, Dictionary, View, AggregatingMergeTree target
-4. **Findings** — bullet list of schema differences, type coercions, null handling changes,
-   data anomalies, or anything that required a manual fix during migration

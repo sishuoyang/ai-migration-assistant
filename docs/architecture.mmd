@@ -5,69 +5,124 @@
   "tertiaryColor": "#fff8e1",
   "background": "#ffffff",
   "fontFamily": "Segoe UI, Arial, sans-serif",
-  "fontSize": "14px"
+  "fontSize": "13px"
 }}}%%
 
 flowchart TB
-    partner(["👤 Partner Browser\nlocalhost:3080"])
-    migrate["🐍 migrate.py\n(runs on host)"]
+    partner(["👤 Partner browser"])
 
-    subgraph docker["🐳  Docker — playground-net"]
+    subgraph docker["🐳  Docker Compose — playground-net"]
         direction TB
 
-        subgraph chat["Chat UI"]
-            librechat["LibreChat"]
-            mongo[("MongoDB")]
-            librechat --- mongo
+        nginx["nginx :443\nHTTPS termination"]
+
+        subgraph ui["UI layer"]
+            direction LR
+            dashboard["migration-dashboard\nReact SPA"]
+            subgraph chat_block["Chat UI"]
+                direction TB
+                librechat["LibreChat"]
+                mongo[("MongoDB")]
+                librechat --- mongo
+            end
         end
 
-        subgraph mcp_local["Source MCP Servers"]
-            pg_mcp["postgres-mcp\n:8001"]
-            ch_oss_mcp["clickhouse-oss-mcp\n:8002"]
+        subgraph runner["migration-runner — Python sandbox + run state"]
+            direction TB
+            runner_mcp["MCP tools\nrun_python · run_python_background\ntail_python_job · write_workspace_file"]
+            migrationkit["migrationkit library\nMigrator · Validator · Benchmarker\nSource ABC · ClickHouseTarget · S3/GCSStage"]
+            runner_api["FastAPI :8001\n/api/mk/* · SSE event stream"]
+            runner_state[("SQLite (WAL)\nruns · run_tables · events\nvalidations · benchmarks")]
         end
 
-        subgraph src_db["Source Databases"]
-            pg[("PostgreSQL 16\necommerce")]
-            ch_oss[("ClickHouse OSS\nanalytics")]
+        subgraph mcps["Source + Target MCPs"]
+            direction TB
+            pg_mcp["postgres-mcp\nexecute_sql"]
+            ch_oss_mcp["clickhouse-oss-mcp\nrun_select_query"]
+            sf_shim["snowflake-source-shim\n(Gemini schema-strip proxy)"]
+            sf_mcp["snowflake-source\n(Snowflake-Labs MCP)"]
+            bq_mcp["bigquery-source\n(Google MCP toolbox)"]
+            chctl["clickhousectl-mcp\nrun_query · run_command\n(write-enabled CH Cloud MCP)"]
+            sf_shim --> sf_mcp
+        end
+
+        subgraph src_dbs["Bundled source DBs"]
+            direction LR
+            pg[("PostgreSQL 16\necommerce · tpch")]
+            ch_oss[("ClickHouse OSS\nanalytics · tpch")]
         end
     end
 
-    subgraph cloud["☁️  Cloud"]
+    subgraph cloud["☁️  External"]
         direction TB
-        llm["LLM Provider\nAnthropic · OpenAI · Gemini"]
-
-        subgraph ch_mcps["ClickHouse Cloud MCPs"]
-            ch_cloud_mcp["clickhouse-cloud\nmcp.clickhouse.cloud"]
-            ch_docs_mcp["clickhouse-docs"]
+        llm["LLM Provider\nAnthropic · OpenAI · Gemini · Bedrock"]
+        ch_cloud[("ClickHouse Cloud\n(migration target)")]
+        subgraph optional_src["Optional source clouds"]
+            direction LR
+            sf_acct[("Snowflake account")]
+            bq_proj[("BigQuery project")]
         end
-
-        ch_cloud[("ClickHouse Cloud\nmigration_target")]
+        subgraph staging["Optional object-storage staging"]
+            direction LR
+            s3[("S3 bucket")]
+            gcs[("GCS bucket")]
+        end
     end
 
-    partner -->|"HTTP"| librechat
-    librechat -->|"API key"| llm
+    %% Browser entrypoint
+    partner -->|"HTTPS"| nginx
+    nginx -->|"/dashboard/*"| dashboard
+    nginx -->|"/"| librechat
+    nginx -->|"/api/mk/*"| runner_api
 
+    %% Dashboard ↔ runner API (state + live events)
+    dashboard <-->|"REST + SSE"| runner_api
+    runner_api --- runner_state
+
+    %% LibreChat ↔ MCPs + LLM
+    librechat -->|"API"| llm
+    librechat <-->|"SSE"| runner_mcp
     librechat <-->|"SSE"| pg_mcp
     librechat <-->|"SSE"| ch_oss_mcp
-    pg_mcp <-->  pg
+    librechat <-->|"SSE"| sf_shim
+    librechat <-->|"SSE"| bq_mcp
+    librechat <-->|"SSE"| chctl
+
+    %% migrationkit data plane (read source, write target, write state)
+    runner_mcp -.->|"executes script"| migrationkit
+    migrationkit --> runner_state
+    migrationkit -->|"read"| pg
+    migrationkit -->|"read"| ch_oss
+    migrationkit -->|"read"| sf_acct
+    migrationkit -->|"read"| bq_proj
+    migrationkit -->|"HTTPS INSERT"| ch_cloud
+
+    %% Source-MCP backing-DB connections
+    pg_mcp <--> pg
     ch_oss_mcp <--> ch_oss
+    sf_mcp <-->|"snowflake-connector"| sf_acct
+    bq_mcp <-->|"google-cloud-bigquery"| bq_proj
+    chctl <-->|"HTTPS"| ch_cloud
 
-    librechat <-->|"OAuth · HTTPS"| ch_cloud_mcp
-    librechat <-->|"HTTPS"| ch_docs_mcp
-    ch_cloud_mcp <--> ch_cloud
+    %% Optional staging paths (dashed)
+    migrationkit -.->|"COPY INTO @stage"| s3
+    s3 -.->|"INSERT FROM s3()"| ch_cloud
+    migrationkit -.->|"EXPORT DATA"| gcs
+    gcs -.->|"INSERT FROM gcs()"| ch_cloud
 
-    migrate -->|"reads"| pg
-    migrate -->|"reads"| ch_oss
-    migrate -->|"HTTPS write"| ch_cloud
+    %% Styling
+    classDef cloudBox   fill:#dbeafe,stroke:#3b82f6,stroke-width:1.5px,color:#1e3a5f
+    classDef hostNode   fill:#f1f5f9,stroke:#64748b,stroke-width:1.5px,color:#0f172a
+    classDef uiBox      fill:#fef3c7,stroke:#d97706,stroke-width:1.5px,color:#78350f
+    classDef runnerBox  fill:#fce7f3,stroke:#db2777,stroke-width:1.5px,color:#831843
+    classDef mcpBox     fill:#fef9c3,stroke:#ca8a04,stroke-width:1.5px,color:#713f12
+    classDef dbBox      fill:#f3e8ff,stroke:#9333ea,stroke-width:1.5px,color:#3b0764
+    classDef stagingBox fill:#e0f2fe,stroke:#0284c7,stroke-width:1.5px,color:#0c4a6e
 
-    classDef cloudBox  fill:#dbeafe,stroke:#3b82f6,stroke-width:1.5px,color:#1e3a5f
-    classDef dockerBox fill:#dcfce7,stroke:#22c55e,stroke-width:1.5px,color:#14532d
-    classDef dbNode    fill:#f3e8ff,stroke:#9333ea,stroke-width:1.5px,color:#3b0764
-    classDef mcpNode   fill:#fef9c3,stroke:#ca8a04,stroke-width:1.5px,color:#713f12
-    classDef hostNode  fill:#f1f5f9,stroke:#64748b,stroke-width:1.5px,color:#0f172a
-
-    class ch_cloud,llm,ch_cloud_mcp,ch_docs_mcp cloudBox
-    class librechat,mongo dockerBox
-    class pg,ch_oss dbNode
-    class pg_mcp,ch_oss_mcp mcpNode
-    class partner,migrate hostNode
+    class llm,ch_cloud,sf_acct,bq_proj cloudBox
+    class s3,gcs stagingBox
+    class partner hostNode
+    class nginx,dashboard,librechat,mongo uiBox
+    class runner_mcp,runner_api,runner_state,migrationkit runnerBox
+    class pg_mcp,ch_oss_mcp,sf_mcp,sf_shim,bq_mcp,chctl mcpBox
+    class pg,ch_oss dbBox

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Delete the three pre-built migration agents from MongoDB and re-run
+# Delete the four pre-built migration agents from MongoDB and re-run
 # librechat-init to recreate them. Use after changing AGENT_PROVIDER /
 # AGENT_MODEL (or any AGENT_PROVIDER_<SOURCE>) in .env, since the init
 # container's idempotency check skips agents that already match.
@@ -10,6 +10,7 @@ set -euo pipefail
 AGENTS=(
     "Postgres → ClickHouse Cloud"
     "Snowflake → ClickHouse Cloud"
+    "BigQuery → ClickHouse Cloud"
     "ClickHouse OSS → ClickHouse Cloud"
 )
 
@@ -19,12 +20,13 @@ read -rp "Continue? [y/N] " confirm
 [[ "$confirm" =~ ^[Yy]$ ]] || { echo "Aborted."; exit 0; }
 
 # Single regex-match delete so the operation is one round trip and works
-# whether or not all three currently exist.
+# whether or not all four currently exist.
 docker compose exec -T mongodb mongosh "mongodb://mongodb:27017/LibreChat" --quiet --eval '
     db.agents.deleteMany({
         name: { $in: [
             "Postgres → ClickHouse Cloud",
             "Snowflake → ClickHouse Cloud",
+            "BigQuery → ClickHouse Cloud",
             "ClickHouse OSS → ClickHouse Cloud"
         ]}
     })
